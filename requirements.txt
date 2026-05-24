@@ -1,9 +1,0 @@
-langchain
-streamlit
-beautifulsoup4
-faiss-cpu
-openai
-pypdf2
-requests
-langchain-community
-langchain-openai
