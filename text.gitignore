@@ -1,0 +1,21 @@
+# Environment variables
+.env
+keys.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Vector database
+vectorstore/
+
+# Scraped data
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/
