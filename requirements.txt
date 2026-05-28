@@ -1,8 +1,10 @@
 streamlit
-google-generativeai
-scikit-learn
-numpy
-python-dotenv
+langchain
+langchain-google-genai
+langchain-community
 faiss-cpu
 beautifulsoup4
 requests
+python-dotenv
+scikit-learn
+numpy
