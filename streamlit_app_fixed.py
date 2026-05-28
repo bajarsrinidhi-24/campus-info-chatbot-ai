@@ -1,5 +1,5 @@
 ﻿import streamlit as st
-from chatbot import GNITSChatbot
+from chatbot_fixed import GNITSChatbot
 
 st.set_page_config(page_title='GNITS Campus Assistant', page_icon='🎓')
 
@@ -13,7 +13,6 @@ def init_chatbot():
 try:
     chatbot = init_chatbot()
     
-    # Quick suggestions
     st.markdown('### 💡 Try asking:')
     cols = st.columns(3)
     suggestions = [
@@ -28,7 +27,6 @@ try:
         if cols[i % 3].button(suggestion, key=suggestion):
             st.session_state.question = suggestion
     
-    # Chat input
     question = st.text_input('Your question:', value=st.session_state.get('question', ''))
     
     if question:
@@ -36,14 +34,12 @@ try:
             answer = chatbot.ask(question)
             st.write('**Answer:**', answer)
             
-            # Store in session state
             st.session_state.last_question = question
             st.session_state.last_answer = answer
     
-    # Show last answer if exists
     if 'last_answer' in st.session_state and not question:
         st.write('**Last answer:**', st.session_state.last_answer)
         
 except Exception as e:
     st.error(f'Error: {e}')
-    st.info('Please run python build_vectorstore.py first!')
+    st.info('Please run python build_vectorstore_fixed.py first!')

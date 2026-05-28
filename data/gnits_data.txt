@@ -1,0 +1,55 @@
+﻿GNITS (G. Narayanamma Institute of Technology and Sciences) - Complete College Information
+
+=== ADMISSIONS ===
+UG Admissions: Candidates must qualify TG-EAPCET examination. Eligibility: 10+2 with Mathematics, Physics, Chemistry.
+PG Admissions: Based on GATE examination. If GATE candidates unavailable, TS-PGECET merit considered.
+
+=== FEE STRUCTURE ===
+UG Fees: Category-A and Category-B (JEE): Rs.1,62,000 per annum + JNTUH fees
+UG Fees NRI: USD 5,000 + JNTUH fees per annum
+PG Fees: Rs.1,12,000 for both Category-A and Category-B
+
+=== PROGRAMS OFFERED ===
+B.Tech Programs: CSE, IT, ECE, EEE, Data Science, AI & ML
+M.Tech Programs: Available in various specializations
+
+=== PLACEMENTS ===
+Highest Package: 50 LPA (Microsoft)
+Second Highest: 42.6 LPA (ServiceNow)
+Top Recruiters: Microsoft, ServiceNow, Deloitte, Snowflake, PwC
+Notable Alumni: Shreya Arukala (ServiceNow), Joy Princy (Microsoft), Phanisri Challa (Deloitte)
+
+=== FACILITIES ===
+Library: 8 AM to 8 PM (Monday-Saturday)
+Hostel: Separate girls hostel with 24/7 security
+Canteen: Vegetarian options available
+Sports: Indoor badminton, table tennis, volleyball, basketball
+
+=== CLUBS & COMMITTEES ===
+- Coding Club (CodeChef, LeetCode competitions)
+- Robotics Club
+- Entrepreneurship Development Cell (EDC)
+- Cultural Committee (organizes Splash annual fest)
+- Technical Club (GNITS ACM Student Chapter)
+
+=== EVENTS ===
+- IEEE ICoECIT-2026 (AI & Quantum Computing) - March 2026
+- Splash 2026 (Annual Cultural Fest) - October 2026
+- Hackathon - February 2026
+- Alumni Meet (TU TURNO-26) - December 2026
+
+=== CONTACTS ===
+Principal Office: 040-29565850
+Admissions: 040-29565856
+Training & Placement Cell: 040-29565860
+Library: 040-29565870
+
+=== INTERNATIONAL MOUs ===
+- Curtin University, Australia
+- University of North Texas, USA
+- BEST Centre partnership with Bajaj Auto
+
+=== ACHIEVEMENTS ===
+- Overall Excellence in Education Award 2025
+- Faculty members received Acharya awards
+- Students won 'Innovator under Super100' recognition at FyrstGen Summit 2025

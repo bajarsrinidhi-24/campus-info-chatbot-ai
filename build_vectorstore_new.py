@@ -1,13 +1,12 @@
 ﻿import os
 import pickle
-from dotenv import load_dotenv
 from google import genai
-import numpy as np
 
-load_dotenv()
+# YOUR NEW API KEY
+API_KEY = "AIzaSyDXlKYyFfC2Ays0_ULNApJyfznF7Iwd8Eg"
 
-# Configure Gemini
-client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'))
+# Initialize client with new API key
+client = genai.Client(api_key=API_KEY)
 
 print('=' * 50)
 print('BUILDING VECTOR DATABASE')
@@ -34,27 +33,24 @@ for i in range(0, len(text), chunk_size):
 
 print(f'✅ Created {len(chunks)} chunks')
 
-# Create embeddings using correct model
-print('Creating embeddings (this takes 1-2 minutes)...')
+# Create embeddings using text-embedding-004
+print('Creating embeddings with text-embedding-004...')
 embeddings = []
 for i, chunk in enumerate(chunks):
     print(f'  Processing chunk {i+1}/{len(chunks)}...')
     try:
         result = client.models.embed_content(
-            model='models/embedding-001',
+            model='text-embedding-004',
             contents=[chunk]
         )
         embeddings.append(result.embeddings[0].values)
+        print(f'    ✓ Success!')
     except Exception as e:
-        print(f'  Error on chunk {i+1}: {e}')
-        # Create dummy embedding of correct size (768 for embedding-001)
+        print(f'    ✗ Error: {e}')
         embeddings.append([0.0] * 768)
 
 # Save everything
-print('Saving vector store...')
 os.makedirs('vectorstore', exist_ok=True)
-
-# Save chunks and embeddings
 with open('vectorstore/chunks.pkl', 'wb') as f:
     pickle.dump(chunks, f)
 with open('vectorstore/embeddings.pkl', 'wb') as f:
@@ -64,6 +60,3 @@ print('=' * 50)
 print('✅ VECTOR DATABASE CREATED SUCCESSFULLY!')
 print(f'📁 Saved {len(chunks)} chunks with embeddings')
 print('=' * 50)
-print('')
-print('Next step: Run the chatbot with:')
-print('python -m streamlit run streamlit_app.py')
