@@ -1,5 +1,4 @@
 import streamlit as st
-import random
 import re
 
 # Page config
@@ -9,126 +8,63 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state
-if 'dark_mode' not in st.session_state:
-    st.session_state.dark_mode = False
+# Initialize session state for messages
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
 # College Data
-COLLEGE_DATA = {
-    "admissions": {
-        "ug": "UG Admissions: TG-EAPCET exam required. Eligibility: 10+2 with Physics, Chemistry, Mathematics. Contact: 040-29565856",
-        "pg": "PG Admissions: Based on GATE score or TS-PGECET. Contact: 040-29565856"
-    },
-    "fees": {
-        "btech": "B.Tech Fee: ₹1,62,000 per year + JNTUH fees",
-        "mtech": "M.Tech Fee: ₹1,12,000 per year",
-        "nri": "NRI Category: USD 5,000 + JNTUH fees per year"
-    },
-    "placements": {
-        "highest": "Highest Package: 50 LPA (Microsoft)",
-        "companies": "Top Recruiters: Microsoft (50 LPA), ServiceNow (42.6 LPA), Deloitte, Snowflake, PwC"
-    },
-    "facilities": {
-        "library": "Library: 8 AM to 8 PM (Monday-Saturday)",
-        "hostel": "Hostel: Girls hostel with 24/7 security",
-        "sports": "Sports: Indoor badminton, table tennis, volleyball, basketball",
-        "canteen": "Canteen: Vegetarian and non-vegetarian options"
-    },
-    "clubs": {
-        "coding": "Coding Club: CodeChef, LeetCode competitions",
-        "robotics": "Robotics Club",
-        "edc": "Entrepreneurship Development Cell (EDC)",
-        "cultural": "Cultural Committee: Splash annual fest",
-        "technical": "Technical Club: GNITS ACM Student Chapter"
-    },
-    "contacts": {
-        "principal": "Principal Office: 040-29565850",
-        "admissions": "Admissions: 040-29565856",
-        "placements": "Training & Placement Cell: 040-29565860",
-        "library": "Library: 040-29565870"
-    },
-    "events": {
-        "ieee": "IEEE ICoECIT-2026 (AI & Quantum Computing) - March 2026",
-        "splash": "Splash 2026 (Annual Cultural Fest) - October 2026",
-        "hackathon": "Hackathon - February 2026",
-        "alumni": "Alumni Meet (TU TURNO-26) - December 2026"
-    }
+COLLEGE_INFO = {
+    "admissions": "📝 ADMISSIONS\n\nUG: TG-EAPCET exam required. Eligibility: 10+2 with Physics, Chemistry, Mathematics\nPG: Based on GATE score or TS-PGECET\nContact: 040-29565856",
+    "fees": "💰 FEE STRUCTURE\n\nB.Tech: ₹1,62,000 per year + JNTUH fees\nM.Tech: ₹1,12,000 per year\nNRI Category: USD 5,000 + JNTUH fees",
+    "placements": "🏆 PLACEMENTS\n\nHighest Package: 50 LPA (Microsoft)\nTop Recruiters: Microsoft, ServiceNow (42.6 LPA), Deloitte, Snowflake, PwC",
+    "facilities": "📚 FACILITIES\n\nLibrary: 8 AM to 8 PM (Mon-Sat)\nHostel: Girls hostel with 24/7 security\nSports: Indoor games, volleyball, basketball\nCanteen: Available",
+    "clubs": "🎉 CLUBS & EVENTS\n\nCoding Club, Robotics Club, Entrepreneurship Cell\nCultural Committee, Technical Club (ACM)\nIEEE ICoECIT-2026 (March 2026)\nSplash 2026 (October 2026)",
+    "contacts": "📞 CONTACTS\n\nPrincipal: 040-29565850\nAdmissions: 040-29565856\nPlacements: 040-29565860\nLibrary: 040-29565870"
 }
 
-def get_response(user_input):
-    text = user_input.lower().strip()
+def get_response(question):
+    q = question.lower().strip()
     
     # Greetings
-    if re.search(r'\b(hi|hello|hey|greetings|sup|namaste)\b', text):
-        greetings = [
-            "Hello! 👋 How can I help you with GNITS today?",
-            "Hey there! 😊 What would you like to know about GNITS?",
-            "Hi! 🎓 I'm CampusBot. Ask me anything about GNITS!",
-            "Namaste! 🙏 How can I assist you with college information?"
-        ]
-        return random.choice(greetings)
+    if re.search(r'^(hi|hello|hey|namaste|good morning|good afternoon|good evening)', q):
+        return "Hello! 👋 Welcome to CampusBot! How can I help you with GNITS today?"
     
-    # How are you
-    elif re.search(r'how are you', text):
-        responses = [
-            "I'm doing great, thanks for asking! 😊 Ready to help you with GNITS queries!",
-            "I'm fantastic! 🎉 How can I assist you today?",
-            "All good here! 👍 What can I tell you about GNITS?"
-        ]
-        return random.choice(responses)
+    # Fee related
+    if re.search(r'(fee|fees|cost|price|tuition)', q):
+        return COLLEGE_INFO["fees"]
     
-    # Thanks
-    elif re.search(r'thank|thanks|appreciate', text):
-        responses = [
-            "You're very welcome! 😊 Anything else I can help with?",
-            "My pleasure! 🎓 Feel free to ask more questions!",
-            "Glad to help! 👍 Is there anything else you'd like to know?"
-        ]
-        return random.choice(responses)
+    # Admission related
+    if re.search(r'(admission|apply|eligibility|how to get|join|counseling)', q):
+        return COLLEGE_INFO["admissions"]
     
-    # Bye
-    elif re.search(r'(bye|goodbye|see you|cya)', text):
-        return "Goodbye! 👋 Have a great day! Visit again if you have more questions about GNITS! 🎓"
+    # Placement related
+    if re.search(r'(placement|package|recruiter|company|job|salary|lpa|hiring|offer)', q):
+        return COLLEGE_INFO["placements"]
     
-    # Fee structure
-    elif re.search(r'(fee|fees|cost|price|tuition)', text):
-        return f"💰 **Fee Structure:**\n\n{COLLEGE_DATA['fees']['btech']}\n{COLLEGE_DATA['fees']['mtech']}\n\n{COLLEGE_DATA['fees']['nri']}"
+    # Facility related
+    if re.search(r'(library|hostel|canteen|sports|lab|facility|gym|playground)', q):
+        return COLLEGE_INFO["facilities"]
     
-    # Admissions
-    elif re.search(r'(admission|apply|eligibility|how to get|qualify|counseling)', text):
-        return f"📝 **Admissions:**\n\n{COLLEGE_DATA['admissions']['ug']}\n\n{COLLEGE_DATA['admissions']['pg']}"
+    # Club/Event related
+    if re.search(r'(club|event|fest|hackathon|splash|competition|cultural|technical)', q):
+        return COLLEGE_INFO["clubs"]
     
-    # Placements
-    elif re.search(r'(placement|package|recruiter|company|job|salary|lpa|hiring)', text):
-        return f"🏆 **Placements:**\n\n{COLLEGE_DATA['placements']['highest']}\n\n{COLLEGE_DATA['placements']['companies']}"
-    
-    # Facilities
-    elif re.search(r'(library|hostel|canteen|sports|facility|lab|gym)', text):
-        return f"📚 **Facilities:**\n\n{COLLEGE_DATA['facilities']['library']}\n\n{COLLEGE_DATA['facilities']['hostel']}\n\n{COLLEGE_DATA['facilities']['sports']}\n\n{COLLEGE_DATA['facilities']['canteen']}"
-    
-    # Clubs
-    elif re.search(r'(club|clubs|committee|activity|technical|cultural)', text):
-        return f"🎉 **Clubs & Committees:**\n\n{COLLEGE_DATA['clubs']['coding']}\n{COLLEGE_DATA['clubs']['robotics']}\n{COLLEGE_DATA['clubs']['edc']}\n{COLLEGE_DATA['clubs']['cultural']}\n{COLLEGE_DATA['clubs']['technical']}"
-    
-    # Events
-    elif re.search(r'(event|fest|hackathon|splash|workshop|seminar)', text):
-        return f"🎪 **Upcoming Events:**\n\n{COLLEGE_DATA['events']['ieee']}\n{COLLEGE_DATA['events']['splash']}\n{COLLEGE_DATA['events']['hackathon']}\n{COLLEGE_DATA['events']['alumni']}"
-    
-    # Contacts
-    elif re.search(r'(contact|phone|number|email|call|reach)', text):
-        return f"📞 **Important Contacts:**\n\n{COLLEGE_DATA['contacts']['admissions']}\n{COLLEGE_DATA['contacts']['principal']}\n{COLLEGE_DATA['contacts']['placements']}\n{COLLEGE_DATA['contacts']['library']}"
+    # Contact related
+    if re.search(r'(contact|phone|number|email|call|reach|mobile)', q):
+        return COLLEGE_INFO["contacts"]
     
     # About college
-    elif re.search(r'(about|what is|tell me about college|information)', text):
-        return "🏫 **About GNITS:**\n\nG. Narayanamma Institute of Technology and Sciences (GNITS) is a prestigious women's engineering college in Hyderabad, established in 1997.\n\n**Accreditations:** NBA, NAAC 'A' Grade\n**Courses:** B.Tech (CSE, IT, ECE, EEE, Data Science, AI & ML), M.Tech\n\n📍 Location: Hyderabad, Telangana"
+    if re.search(r'(about|what is|tell me about|information|overview)', q):
+        return "🏫 ABOUT GNITS\n\nG. Narayanamma Institute of Technology and Sciences (GNITS) is a prestigious women's engineering college in Hyderabad, established in 1997.\n\nAccreditations: NBA, NAAC 'A' Grade\nCourses: B.Tech (CSE, IT, ECE, EEE, Data Science, AI & ML), M.Tech\n\n📍 Location: Hyderabad, Telangana"
     
-    # Default response
-    else:
-        return "I'm here to help! 😊\n\nYou can ask me about:\n• 📝 **Admissions** - How to apply, eligibility\n• 💰 **Fees** - B.Tech, M.Tech fee structure\n• 🏆 **Placements** - Packages, recruiters\n• 📚 **Facilities** - Library, Hostel, Sports\n• 🎉 **Clubs & Events** - Activities, fests\n• 📞 **Contacts** - Phone numbers\n\nWhat would you like to know?"
+    # Thank you
+    if re.search(r'(thank|thanks|great|awesome|helpful)', q):
+        return "You're welcome! 😊 Glad I could help! Is there anything else you'd like to know about GNITS?"
+    
+    # Default
+    return "I'm here to help! 😊\n\nYou can ask me about:\n• 📝 Admissions & Eligibility\n• 💰 Fee Structure\n• 🏆 Placements & Packages\n• 📚 Facilities (Library, Hostel, Sports)\n• 🎉 Clubs & Events\n• 📞 Contact Numbers\n\nWhat would you like to know?"
 
-# Custom CSS - Clean, no blue gradient
+# Custom CSS - Clean and professional
 st.markdown("""
 <style>
     .stApp {
@@ -136,8 +72,8 @@ st.markdown("""
     }
     .main-header {
         text-align: center;
-        padding: 1.5rem;
-        background: linear-gradient(135deg, #e84545 0%, #903749 100%);
+        padding: 2rem;
+        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
         border-radius: 20px;
         margin-bottom: 2rem;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3);
@@ -149,10 +85,10 @@ st.markdown("""
     }
     .main-header p {
         color: rgba(255,255,255,0.9);
-        margin: 10px 0 0 0;
+        margin-top: 10px;
     }
     .stButton > button {
-        background: linear-gradient(135deg, #e84545 0%, #903749 100%);
+        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
         color: white;
         border-radius: 25px;
         padding: 10px 20px;
@@ -162,10 +98,10 @@ st.markdown("""
     }
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(233,69,69,0.4);
+        box-shadow: 0 5px 15px rgba(233,69,96,0.4);
     }
     .user-message {
-        background: linear-gradient(135deg, #e84545 0%, #903749 100%);
+        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
         color: white;
         padding: 12px 18px;
         border-radius: 20px;
@@ -197,9 +133,6 @@ st.markdown("""
     .stTextInput > div > div > input::placeholder {
         color: rgba(255,255,255,0.6);
     }
-    .sidebar .sidebar-content {
-        background: rgba(0,0,0,0.2);
-    }
     .info-box {
         background: rgba(255,255,255,0.05);
         padding: 15px;
@@ -219,14 +152,7 @@ st.markdown("""
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 🎨 Theme")
-    theme_toggle = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode)
-    if theme_toggle != st.session_state.dark_mode:
-        st.session_state.dark_mode = theme_toggle
-        st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### 🤖 About Me")
+    st.markdown("### 🤖 About CampusBot")
     st.markdown("""
     Hey there! 👋 I'm CampusBot.
     
@@ -237,6 +163,15 @@ with st.sidebar:
     - 📚 **Facilities**
     - 🎉 **Clubs & Events**
     - 📞 **Contacts**
+    """)
+    
+    st.markdown("---")
+    st.markdown("### 📌 Quick Info")
+    st.markdown("""
+    - 🏫 **GNITS Hyderabad**
+    - 🎓 **Est:** 1997
+    - 👩‍🎓 **Women's College**
+    - ⭐ **NAAC 'A' Grade**
     """)
     
     if st.button("🗑️ Clear Chat", use_container_width=True):
@@ -269,6 +204,7 @@ st.markdown("---")
 # Chat display
 st.markdown("### 💬 Chat with CampusBot")
 
+# Display chat history
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"""
@@ -287,13 +223,20 @@ for msg in st.session_state.messages:
         </div>
         """, unsafe_allow_html=True)
 
-# Input
+# Chat input
 question = st.text_input("", placeholder="Type your message here...", key="input", label_visibility="collapsed")
 
 if question:
+    # Add user message
     st.session_state.messages.append({"role": "user", "content": question})
+    
+    # Get bot response
     response = get_response(question)
+    
+    # Add bot message
     st.session_state.messages.append({"role": "assistant", "content": response})
+    
+    # Rerun to update display
     st.rerun()
 
 # Welcome message
