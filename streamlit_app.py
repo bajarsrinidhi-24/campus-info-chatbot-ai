@@ -1,7 +1,8 @@
 import streamlit as st
 import re
-import random
 from datetime import datetime
+
+# ================= PAGE CONFIG =================
 
 st.set_page_config(
     page_title="GNITS Academic Assistant",
@@ -9,17 +10,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# ===================== CUSTOM CSS =====================
+# ================= CUSTOM CSS =================
+
 st.markdown("""
 <style>
 
-/* Main App Background */
+/* Main Background */
 .stApp {
     background-color: white;
     color: black;
 }
 
-/* Main Header */
+/* Header */
 .main-header {
     text-align: center;
     padding: 1.5rem;
@@ -29,36 +31,35 @@ st.markdown("""
 }
 
 .main-header h1 {
-    font-size: 2.2rem;
     color: white;
+    font-size: 2.3rem;
     margin: 0;
 }
 
 .main-header p {
     color: white;
+    margin-top: 10px;
 }
 
-/* User Chat Bubble */
+/* User Chat */
 .user-message {
     background: linear-gradient(135deg, #e94560 0%, #533483 100%);
     color: white;
-    padding: 12px 18px;
-    border-radius: 20px;
-    margin: 10px 0;
+    padding: 14px 18px;
+    border-radius: 18px;
     max-width: 75%;
-    box-shadow: 0px 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0px 2px 10px rgba(0,0,0,0.1);
 }
 
-/* Bot Chat Bubble */
+/* Bot Chat */
 .bot-message {
-    background: #f1f3f6;
+    background: #f3f4f6;
     color: black;
-    padding: 12px 18px;
-    border-radius: 20px;
-    margin: 10px 0;
+    padding: 14px 18px;
+    border-radius: 18px;
     max-width: 75%;
     border: 1px solid #ddd;
-    box-shadow: 0px 2px 8px rgba(0,0,0,0.05);
+    box-shadow: 0px 2px 10px rgba(0,0,0,0.05);
 }
 
 /* Buttons */
@@ -85,15 +86,16 @@ section[data-testid="stSidebar"] {
     background-color: white;
 }
 
-/* Text Colors */
-h1, h2, h3, h4, h5, h6, p, div, span {
+/* Text */
+h1,h2,h3,h4,h5,h6,p,div,span {
     color: black;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== HEADER =====================
+# ================= HEADER =================
+
 st.markdown("""
 <div class="main-header">
     <h1>🎓 GNITS Academic Assistant</h1>
@@ -101,13 +103,21 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ===================== SESSION =====================
-if 'messages' not in st.session_state:
+# ================= SESSION STATES =================
+
+if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# ===================== KNOWLEDGE BASE =====================
+if "recent_chats" not in st.session_state:
+    st.session_state.recent_chats = []
+
+if "pinned_chats" not in st.session_state:
+    st.session_state.pinned_chats = []
+
+# ================= KNOWLEDGE BASE =================
 
 ACADEMIC_RULES = {
+
     "attendance": """
 📊 **ATTENDANCE REQUIREMENTS**
 
@@ -143,7 +153,7 @@ ACADEMIC_RULES = {
 """
 }
 
-# ===================== RESPONSE FUNCTION =====================
+# ================= RESPONSE FUNCTION =================
 
 def get_academic_response(user_input):
 
@@ -172,11 +182,11 @@ You can ask me about:
     elif re.search(r'grade|cgpa|sgpa|percentage', text):
         return ACADEMIC_RULES["grading"]
 
-    # Exam
+    # Exams
     elif re.search(r'exam|mid|internal|external', text):
         return ACADEMIC_RULES["exam"]
 
-    # Placement
+    # Placements
     elif re.search(r'placement|package|job|salary', text):
         return """
 🏆 **PLACEMENT DETAILS**
@@ -201,7 +211,7 @@ You can ask me about:
 """
 
     # Clubs
-    elif re.search(r'club|hackathon|event|fest', text):
+    elif re.search(r'club|event|hackathon|fest', text):
         return """
 🎉 **CLUBS & EVENTS**
 
@@ -211,7 +221,7 @@ You can ask me about:
 📅 Splash Fest
 """
 
-    # Fee
+    # Fees
     elif re.search(r'fee|fees|cost|tuition', text):
         return """
 💰 **FEE STRUCTURE**
@@ -235,28 +245,84 @@ M.Tech: ₹1,12,000/year
 Please ask your question clearly.
 """
 
-# ===================== SIDEBAR =====================
+# ================= SIDEBAR =================
 
 with st.sidebar:
 
-    st.title("📚 GNITS Menu")
+    st.title("🎓 GNITS Menu")
 
-    st.markdown("### 💬 Chats")
-    st.markdown("• New Chat")
-    st.markdown("• Search Chats")
-    st.markdown("• Recent Chats")
+    # New Chat
+    if st.button("➕ New Chat", use_container_width=True):
+
+        if len(st.session_state.messages) > 0:
+
+            first_question = st.session_state.messages[0]["content"]
+
+            st.session_state.recent_chats.insert(
+                0,
+                first_question[:40]
+            )
+
+        st.session_state.messages = []
+        st.rerun()
 
     st.markdown("---")
 
-    st.markdown("### 📌 Features")
-    st.markdown("• Projects")
-    st.markdown("• Library")
-    st.markdown("• Apps")
-    st.markdown("• More")
+    # Search Chats
+    st.text_input(
+        "🔍 Search Chats",
+        placeholder="Search previous chats..."
+    )
 
     st.markdown("---")
 
+    # Pinned Chats
+    st.markdown("## 📌 Pinned Chats")
+
+    if len(st.session_state.pinned_chats) == 0:
+        st.caption("No pinned chats")
+
+    for item in st.session_state.pinned_chats:
+        st.markdown(f"• {item}")
+
+    st.markdown("---")
+
+    # Recent Chats
+    st.markdown("## 🕒 Recent Chats")
+
+    if len(st.session_state.recent_chats) == 0:
+        st.caption("No recent chats")
+
+    for item in st.session_state.recent_chats[:10]:
+        st.markdown(f"• {item}")
+
+    st.markdown("---")
+
+    # Features
+    st.markdown("## ⚡ Features")
+
+    st.markdown("""
+• 📂 Projects  
+• 📚 Library  
+• 🧩 Apps  
+• ➕ More
+""")
+
+    st.markdown("---")
+
+    # Pin Chat
+    if st.button("📌 Pin Current Chat", use_container_width=True):
+
+        if len(st.session_state.messages) > 0:
+
+            title = st.session_state.messages[0]["content"]
+
+            if title not in st.session_state.pinned_chats:
+                st.session_state.pinned_chats.append(title[:40])
+
+    # Clear Chat
     if st.button("🗑️ Clear Chat", use_container_width=True):
+
         st.session_state.messages = []
         st.rerun()
 
@@ -265,7 +331,7 @@ with st.sidebar:
     st.markdown("### 🌐 Website")
     st.markdown("[GNITS Official Site](https://gnits.ac.in)")
 
-# ===================== QUICK QUESTIONS =====================
+# ================= QUICK QUESTIONS =================
 
 st.markdown("## 💡 Quick Questions")
 
@@ -279,73 +345,92 @@ quick_questions = {
 }
 
 for i, (label, q) in enumerate(quick_questions.items()):
-    if [col1, col2, col3, col4][i].button(label, use_container_width=True):
-        st.session_state.messages.append(
-            {"role": "user", "content": q}
-        )
+
+    if [col1, col2, col3, col4][i].button(
+        label,
+        use_container_width=True
+    ):
+
+        current_time = datetime.now().strftime("%I:%M %p")
+
+        st.session_state.messages.append({
+            "role": "user",
+            "content": q,
+            "time": current_time
+        })
 
         answer = get_academic_response(q)
 
-        st.session_state.messages.append(
-            {"role": "assistant", "content": answer}
-        )
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "time": current_time
+        })
 
         st.rerun()
 
 st.markdown("---")
 
-# ===================== CHAT DISPLAY =====================
+# ================= CHAT DISPLAY =================
 
 st.markdown("## 💬 Chat")
 
 for msg in st.session_state.messages:
 
+    # USER MESSAGE
     if msg["role"] == "user":
 
         st.markdown(f"""
-        <div style="display:flex; justify-content:flex-end;">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
             <div class="user-message">
                 <b>You</b><br>
+                <small>{msg.get("time","")}</small><br><br>
                 {msg["content"]}
             </div>
         </div>
         """, unsafe_allow_html=True)
 
+    # BOT MESSAGE
     else:
 
         st.markdown(f"""
-        <div style="display:flex; justify-content:flex-start;">
+        <div style="display:flex; justify-content:flex-start; margin-bottom:12px;">
             <div class="bot-message">
                 <b>🎓 GNITS Assistant</b><br>
+                <small>{msg.get("time","")}</small><br><br>
                 {msg["content"]}
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-# ===================== CHAT INPUT =====================
+# ================= CHAT INPUT =================
 
 question = st.chat_input("Ask your question about GNITS...")
 
 if question:
 
+    current_time = datetime.now().strftime("%I:%M %p")
+
     # Save User Message
     st.session_state.messages.append({
         "role": "user",
-        "content": question
+        "content": question,
+        "time": current_time
     })
 
-    # Generate Response
+    # Generate Bot Response
     response = get_academic_response(question)
 
-    # Save Bot Response
+    # Save Bot Message
     st.session_state.messages.append({
         "role": "assistant",
-        "content": response
+        "content": response,
+        "time": current_time
     })
 
     st.rerun()
 
-# ===================== WELCOME MESSAGE =====================
+# ================= WELCOME =================
 
 if len(st.session_state.messages) == 0:
 
