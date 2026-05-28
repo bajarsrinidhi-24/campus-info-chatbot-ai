@@ -1,127 +1,168 @@
 import streamlit as st
 import google.generativeai as genai
 
+# Page config
 st.set_page_config(
     page_title="CampusBot - GNITS Assistant",
     page_icon="🎓",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Custom CSS for attractive UI
-st.markdown("""
-<style>
-    .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    .main-header {
-        text-align: center;
-        padding: 2rem;
-        background: rgba(255,255,255,0.95);
-        border-radius: 20px;
-        margin-bottom: 2rem;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    .main-header h1 {
-        font-size: 2.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 10px 20px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    .user-message {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 15px 20px;
-        border-radius: 20px;
-        margin: 10px 0;
-        border-radius: 20px 20px 5px 20px;
-    }
-    .bot-message {
-        background: white;
-        color: #2c3e50;
-        padding: 15px 20px;
-        border-radius: 20px;
-        margin: 10px 0;
-        border-radius: 20px 20px 20px 5px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    }
-    .info-box {
-        background: rgba(255,255,255,0.95);
-        padding: 20px;
-        border-radius: 15px;
-        margin: 10px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize session state
+if 'dark_mode' not in st.session_state:
+    st.session_state.dark_mode = False
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+
+# Custom CSS based on mode
+def apply_theme():
+    if st.session_state.dark_mode:
+        st.markdown("""
+        <style>
+            .stApp {
+                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            }
+            .main-header {
+                text-align: center;
+                padding: 2rem;
+                background: rgba(255,255,255,0.1);
+                border-radius: 20px;
+                margin-bottom: 2rem;
+                backdrop-filter: blur(10px);
+            }
+            .main-header h1 {
+                font-size: 2.5rem;
+                background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .stButton > button {
+                background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+                color: white;
+                border-radius: 25px;
+                padding: 10px 20px;
+                font-weight: 600;
+            }
+            .user-message {
+                background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+                color: white;
+                padding: 12px 18px;
+                border-radius: 20px;
+                margin: 10px 0;
+                border-radius: 20px 20px 5px 20px;
+                max-width: 70%;
+                float: right;
+            }
+            .bot-message {
+                background: rgba(255,255,255,0.1);
+                color: #fff;
+                padding: 12px 18px;
+                border-radius: 20px;
+                margin: 10px 0;
+                border-radius: 20px 20px 20px 5px;
+                max-width: 70%;
+                float: left;
+            }
+            .chat-container {
+                max-height: 500px;
+                overflow-y: auto;
+                padding: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <style>
+            .stApp {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            .main-header {
+                text-align: center;
+                padding: 2rem;
+                background: rgba(255,255,255,0.95);
+                border-radius: 20px;
+                margin-bottom: 2rem;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            }
+            .main-header h1 {
+                font-size: 2.5rem;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            .stButton > button {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 25px;
+                padding: 10px 20px;
+                font-weight: 600;
+            }
+            .user-message {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px 18px;
+                border-radius: 20px;
+                margin: 10px 0;
+                border-radius: 20px 20px 5px 20px;
+                max-width: 70%;
+                float: right;
+            }
+            .bot-message {
+                background: white;
+                color: #2c3e50;
+                padding: 12px 18px;
+                border-radius: 20px;
+                margin: 10px 0;
+                border-radius: 20px 20px 20px 5px;
+                max-width: 70%;
+                float: left;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            .chat-container {
+                max-height: 500px;
+                overflow-y: auto;
+                padding: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+apply_theme()
 
 # Header
 st.markdown("""
 <div class="main-header">
-    <h1>🎓 CampusBot - GNITS Assistant</h1>
-    <p style="font-size: 1.1rem; color: #666;">Your 24/7 AI-powered campus assistant</p>
-    <p style="font-size: 0.85rem; color: #999;">Powered by Google Gemini</p>
+    <h1>🎓 CampusBot</h1>
+    <p>Your friendly campus assistant for GNITS</p>
+    <p style="font-size: 0.85rem;">💬 Chat with me like you're talking to a friend!</p>
 </div>
 """, unsafe_allow_html=True)
 
-# College Information Database
+# College Data
 COLLEGE_DATA = """
-G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
+GNITS (G. Narayanamma Institute of Technology and Sciences), Hyderabad
 
-📝 ADMISSIONS:
-- UG: TG-EAPCET exam required. Eligibility: 10+2 with Physics, Chemistry, Mathematics
-- PG: Based on GATE score or TS-PGECET
-- Contact Admissions: 040-29565856
+ADMISSIONS:
+- UG: TG-EAPCET required. 10+2 with PCM
+- PG: GATE or TS-PGECET
+- Contact: 040-29565856
 
-💰 FEE STRUCTURE:
-- B.Tech: ₹1,62,000 per year + JNTUH fees
-- M.Tech: ₹1,12,000 per year
-- NRI Category: USD 5,000 + JNTUH fees per year
+FEES:
+- B.Tech: ₹1,62,000/year
+- M.Tech: ₹1,12,000/year
 
-🏆 PLACEMENTS:
-- Highest Package: 50 LPA (Microsoft)
-- Second Highest: 42.6 LPA (ServiceNow)
-- Top Recruiters: Microsoft, ServiceNow, Deloitte, Snowflake, PwC
+PLACEMENTS:
+- Highest: 50 LPA (Microsoft)
+- Top: Microsoft, ServiceNow, Deloitte
 
-📚 FACILITIES:
-- Library: 8 AM to 8 PM (Monday-Saturday)
-- Hostel: Girls hostel with 24/7 security
-- Sports: Indoor badminton, table tennis, volleyball, basketball
-- Canteen: Vegetarian and non-vegetarian options
+FACILITIES:
+- Library: 8 AM - 8 PM
+- Hostel, Sports, Canteen
 
-🎉 CLUBS & EVENTS:
-- Coding Club (CodeChef, LeetCode competitions)
-- Robotics Club
-- Entrepreneurship Development Cell (EDC)
-- Cultural Committee (Splash annual fest)
-- Technical Club (GNITS ACM Student Chapter)
-- IEEE ICoECIT-2026 (AI & Quantum Computing) - March 2026
-- Hackathon - February 2026
-- Alumni Meet (TU TURNO-26) - December 2026
-
-📞 IMPORTANT CONTACTS:
-- Principal Office: 040-29565850
+CONTACTS:
+- Principal: 040-29565850
 - Admissions: 040-29565856
-- Training & Placement Cell: 040-29565860
-- Library: 040-29565870
-
-🏫 ABOUT:
-- Established: 1997
-- Type: Women's Engineering College
-- Location: Hyderabad, Telangana
-- Accreditation: NBA, NAAC 'A' Grade
-- Courses: B.Tech (CSE, IT, ECE, EEE, Data Science, AI & ML), M.Tech
+- Placements: 040-29565860
 """
 
 # Initialize Gemini
@@ -131,102 +172,104 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 🤖 About CampusBot")
-    st.info("""
-    **CampusBot** is your AI-powered assistant for GNITS college.
+    theme_toggle = st.toggle("🌙 Dark Mode", value=st.session_state.dark_mode)
+    if theme_toggle != st.session_state.dark_mode:
+        st.session_state.dark_mode = theme_toggle
+        st.rerun()
     
-    Ask me anything about:
+    st.markdown("---")
+    st.markdown("### 🎤 About Me")
+    st.info("""
+    Hey there! 👋 I'm CampusBot - your friendly AI assistant for GNITS college.
+    
+    I can help you with:
     - 📝 Admissions
-    - 💰 Fee Structure  
+    - 💰 Fees  
     - 🏆 Placements
     - 📚 Facilities
-    - 🎉 Events & Clubs
+    - 🎉 Events
     - 📞 Contacts
+    
+    Just ask me anything! 😊
     """)
     
-    st.markdown("---")
-    st.markdown("### 📌 Quick Info")
-    st.markdown("""
-    - 🏫 **GNITS Hyderabad**
-    - 🎓 **Established:** 1997
-    - 👩‍🎓 **Type:** Women's Engineering College
-    - ⭐ **NAAC:** 'A' Grade
-    """)
-    
-    st.markdown("---")
-    st.markdown("### 🔗 Useful Links")
-    st.markdown("[🌐 Official Website](https://gnits.ac.in)")
+    if st.button("🗑️ Clear Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
 
-# Quick Questions Section
+# Quick questions
 st.markdown("### 💡 Quick Questions")
-col1, col2, col3, col4 = st.columns(4)
+cols = st.columns(4)
+qs = ["💰 Fee Structure", "📝 Admissions", "🏆 Placements", "📞 Contacts"]
+for i, q in enumerate(qs):
+    if cols[i].button(q, use_container_width=True):
+        st.session_state.messages.append({"role": "user", "content": f"Tell me about {q}"})
 
-with col1:
-    if st.button("💰 Fee Structure", use_container_width=True):
-        st.session_state.question = "What is the fee structure for B.Tech?"
-with col2:
-    if st.button("📝 Admissions", use_container_width=True):
-        st.session_state.question = "How to get admission in GNITS?"
-with col3:
-    if st.button("🏆 Placements", use_container_width=True):
-        st.session_state.question = "What is the placement package?"
-with col4:
-    if st.button("🎉 Events & Clubs", use_container_width=True):
-        st.session_state.question = "What clubs and events are available?"
+# Chat display
+st.markdown("### 💬 Chat with CampusBot")
+chat_container = st.container()
 
-st.markdown("---")
-
-# Chat Interface
-st.markdown("### 💬 Ask Me Anything")
-
-question = st.text_input(
-    "Type your question here...",
-    value=st.session_state.get("question", ""),
-    placeholder="e.g., What is the hostel facility like?",
-    label_visibility="collapsed"
-)
-
-if question:
-    # Show user message
-    st.markdown(f"""
-    <div class="user-message">
-        <strong>You</strong><br>{question}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    with st.spinner("🤔 CampusBot is thinking..."):
-        try:
-            prompt = f"""You are CampusBot, a friendly, professional campus assistant for GNITS college.
-            
-Answer based on this college information:
-{COLLEGE_DATA}
-
-User Question: {question}
-
-Instructions:
-- Be helpful, concise, and friendly
-- Use emojis naturally (😊, 🎓, 💡)
-- Keep responses under 200 words
-- If information is not available, say "I don't have that information. Please contact the college at 040-29565856"
-
-Answer:"""
-            
-            response = model.generate_content(prompt)
-            
+with chat_container:
+    for msg in st.session_state.messages:
+        if msg["role"] == "user":
             st.markdown(f"""
-            <div class="bot-message">
-                <strong>🎓 CampusBot</strong><br>{response.text}
+            <div style="display: flex; justify-content: flex-end;">
+                <div class="user-message">
+                    <strong>You</strong><br>{msg["content"]}
+                </div>
             </div>
             """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div style="display: flex; justify-content: flex-start;">
+                <div class="bot-message">
+                    <strong>🎓 CampusBot</strong><br>{msg["content"]}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# Input
+question = st.text_input("", placeholder="Type your message here...", key="input", label_visibility="collapsed")
+
+if question:
+    st.session_state.messages.append({"role": "user", "content": question})
+    
+    with st.spinner("🤔 Thinking..."):
+        try:
+            # Create conversation history
+            conversation = "\n".join([f"{'User' if m['role']=='user' else 'Assistant'}: {m['content']}" for m in st.session_state.messages[-5:]])
+            
+            prompt = f"""You are CampusBot, a friendly, warm, and helpful assistant for GNITS college.
+
+College info: {COLLEGE_DATA}
+
+Previous conversation:
+{conversation}
+
+Current message: {question}
+
+IMPORTANT RULES:
+1. Be NATURAL and CONVERSATIONAL - like you're chatting with a friend
+2. For greetings like "hi", "hello", "hey" - respond warmly like "Hello! 😊 How can I help you today? What would you like to know about GNITS?"
+3. For "how are you" - respond like "I'm doing great, thanks for asking! 😊 Ready to help you with GNITS queries!"
+4. For "thank you", "thanks" - respond like "You're very welcome! 😊 Anything else I can help you with?"
+5. Use EMOJIS naturally (😊, 🎓, 💡, 👍, ❤️)
+6. Keep responses friendly and engaging
+7. Answer based on the college info provided
+
+Your response should sound like a real person, not a robot! 😊
+
+Response:"""
+            
+            response = model.generate_content(prompt)
+            answer = response.text
+            
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+            st.rerun()
             
         except Exception as e:
             st.error(f"Error: {e}")
 
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #999; font-size: 0.8rem;">
-    <p>💡 CampusBot - Your 24/7 Campus Assistant | Powered by Google Gemini AI</p>
-    <p>For urgent queries, contact GNITS directly: 📞 040-29565856</p>
-</div>
-""", unsafe_allow_html=True)
+# Welcome message
+if not st.session_state.messages:
+    st.info("👋 **Hello!** I'm CampusBot. Ask me anything about GNITS college - admissions, fees, placements, or just say hi! 😊")
