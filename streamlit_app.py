@@ -1,20 +1,21 @@
 import streamlit as st
 import re
 
-st.set_page_config(page_title="GNITS IT Syllabus Assistant", page_icon="💻", layout="wide")
+st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
-# Custom CSS
+# Custom CSS - White/Light Theme
 st.markdown("""
 <style>
     .stApp {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: linear-gradient(135deg, #f5f7fa 0%, #ffffff 100%);
     }
     .main-header {
         text-align: center;
         padding: 2rem;
-        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 20px;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
     .main-header h1 {
         font-size: 2rem;
@@ -24,7 +25,7 @@ st.markdown("""
         color: rgba(255,255,255,0.9);
     }
     .user-message {
-        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 12px 18px;
         border-radius: 20px;
@@ -32,23 +33,30 @@ st.markdown("""
         max-width: 75%;
         float: right;
         clear: both;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     .bot-message {
-        background: rgba(255,255,255,0.1);
-        color: white;
+        background: white;
+        color: #2c3e50;
         padding: 12px 18px;
         border-radius: 20px;
         margin: 10px 0;
         max-width: 75%;
         float: left;
         clear: both;
-        backdrop-filter: blur(10px);
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        border: 1px solid #e0e0e0;
     }
     .stButton > button {
-        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border-radius: 25px;
         border: none;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
     }
     .nav-item {
         padding: 10px;
@@ -56,20 +64,35 @@ st.markdown("""
         border-radius: 10px;
         cursor: pointer;
         text-align: center;
-        background: rgba(255,255,255,0.1);
+        background: #f0f2f6;
         transition: all 0.3s ease;
+        color: #2c3e50;
     }
     .nav-item:hover {
-        background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
         transform: translateX(5px);
+    }
+    .stTextInput > div > div > input {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 25px;
+        padding: 12px 20px;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #667eea;
+        box-shadow: none;
+    }
+    .sidebar .sidebar-content {
+        background: #f8f9fa;
     }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class="main-header">
-    <h1>💻 GNITS IT Syllabus Assistant</h1>
-    <p>R25 Regulations (2025-2026) | I, II, III, IV Years | Complete Syllabus Guide</p>
+    <h1>🎓 Campus Chatbot</h1>
+    <p>GNITS IT Syllabus | R25 Regulations (2025-2026) | Complete Academic Guide</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -332,7 +355,7 @@ def get_response(question):
     
     # Greetings
     if re.search(r'^(hi|hello|hey|namaste)', q):
-        return "Hello! 👋 I'm GNITS IT Syllabus Assistant. Ask me about:\n\n• 📚 I, II, III, IV Year IT syllabus\n• 📝 Exam Pattern & Grading\n• 🎯 Attendance Rules\n• 💻 Professional Electives\n• 🔓 Open Electives\n\nWhat would you like to know?"
+        return "Hello! 👋 I'm Campus Chatbot. Ask me about:\n\n• 📚 I, II, III, IV Year IT syllabus\n• 📝 Exam Pattern & Grading\n• 🎯 Attendance Rules\n• 💻 Professional Electives\n• 🔓 Open Electives\n\nWhat would you like to know?"
     
     # I Year
     if re.search(r'(i year|1st year|first year|semester 1|semester i|i-i)', q):
@@ -385,19 +408,8 @@ def get_response(question):
 **PE-5 (IV-II):** Edge/Fog Computing | Reinforcement Learning | Cloud Security | Quantum Computing
 **PE-6 (IV-II):** AR/VR | Generative AI | Digital Forensics | Storage Area Networks"""
     
-    # Year overview
-    if re.search(r'(all years|complete syllabus|full syllabus)', q):
-        return """📚 **COMPLETE IT SYLLABUS OVERVIEW (R25):**
-
-**I Year:** Matrices, Physics, C Programming, Data Structures, Python, Electronics
-**II Year:** Java, Web Programming, IoT, OS, DBMS, Full Stack, Algorithm Design
-**III Year:** Software Engineering, Machine Learning, Networks, Security, DevOps, Deep Learning
-**IV Year:** Cloud Computing, NLP, Blockchain, Project Work, Generative AI
-
-Ask me about specific semesters for detailed subjects!"""
-    
     # Default
-    return """😊 **I'm GNITS IT Syllabus Assistant (R25)!**
+    return """😊 **I'm Campus Chatbot!**
 
 Ask me about:
 
@@ -433,7 +445,7 @@ if 'selected_syllabus' not in st.session_state:
 
 # Sidebar Navigation
 with st.sidebar:
-    st.markdown("### 💻 Navigation")
+    st.markdown("### 🎓 Navigation")
     
     # Chat option
     if st.button("💬 Chat with Assistant", use_container_width=True):
@@ -441,7 +453,7 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-    st.markdown("### 📚 IT Syllabus")
+    st.markdown("### 📚 Quick Links")
     
     # Syllabus navigation buttons
     syllabus_options = {
@@ -452,13 +464,26 @@ with st.sidebar:
         "📖 III Year I Sem": "iii_year_i_sem",
         "📖 III Year II Sem": "iii_year_ii_sem",
         "📖 IV Year I Sem": "iv_year_i_sem",
-        "📖 IV Year II Sem": "iv_year_ii_sem",
-        "📋 Attendance Rules": "attendance",
-        "🎯 Grading System": "grading",
-        "📝 Exam Pattern": "exam_pattern"
+        "📖 IV Year II Sem": "iv_year_ii_sem"
     }
     
     for label, key in syllabus_options.items():
+        if st.button(label, use_container_width=True):
+            st.session_state.current_page = "Syllabus"
+            st.session_state.selected_syllabus = key
+            st.rerun()
+    
+    st.markdown("---")
+    st.markdown("### 📋 Resources")
+    
+    resource_options = {
+        "📊 Attendance Rules": "attendance",
+        "🎯 Grading System": "grading",
+        "📝 Exam Pattern": "exam_pattern",
+        "🔓 Open Electives": "open_electives"
+    }
+    
+    for label, key in resource_options.items():
         if st.button(label, use_container_width=True):
             st.session_state.current_page = "Syllabus"
             st.session_state.selected_syllabus = key
@@ -472,7 +497,7 @@ with st.sidebar:
 
 # Main content area
 if st.session_state.current_page == "Chat":
-    # Chat interface
+    # Chat display
     for msg in st.session_state.messages:
         if msg["role"] == "user":
             st.markdown(f"""
@@ -486,7 +511,7 @@ if st.session_state.current_page == "Chat":
             st.markdown(f"""
             <div style="display: flex; justify-content: flex-start;">
                 <div class="bot-message">
-                    <strong>💻 IT Assistant</strong><br>{msg["content"]}
+                    <strong>🎓 Campus Bot</strong><br>{msg["content"]}
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -501,7 +526,7 @@ if st.session_state.current_page == "Chat":
         st.rerun()
     
     if not st.session_state.messages:
-        st.info("👋 **Hello!** I'm your GNITS IT Syllabus Assistant. Ask me about I, II, III, IV year IT subjects, semester-wise syllabus, electives, attendance rules, grading system, or exam pattern! 💻")
+        st.info("👋 **Hello!** I'm Campus Chatbot. Ask me about I, II, III, IV year IT subjects, semester-wise syllabus, electives, attendance rules, grading system, or exam pattern! 💻")
 
 elif st.session_state.current_page == "Syllabus" and st.session_state.selected_syllabus:
     # Display syllabus content
