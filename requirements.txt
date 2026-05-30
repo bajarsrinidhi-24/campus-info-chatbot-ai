@@ -1,7 +1,2 @@
 ﻿streamlit
-langchain
-langchain-google-genai
-faiss-cpu
-beautifulsoup4
-requests
-python-dotenv
+
