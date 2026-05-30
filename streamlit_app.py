@@ -58,21 +58,6 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(102,126,234,0.4);
     }
-    .nav-item {
-        padding: 10px;
-        margin: 5px 0;
-        border-radius: 10px;
-        cursor: pointer;
-        text-align: center;
-        background: #f0f2f6;
-        transition: all 0.3s ease;
-        color: #2c3e50;
-    }
-    .nav-item:hover {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        transform: translateX(5px);
-    }
     .stTextInput > div > div > input {
         background: white;
         border: 2px solid #e0e0e0;
@@ -82,9 +67,6 @@ st.markdown("""
     .stTextInput > div > div > input:focus {
         border-color: #667eea;
         box-shadow: none;
-    }
-    .sidebar .sidebar-content {
-        background: #f8f9fa;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -453,28 +435,7 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-    st.markdown("### 📚 Quick Links")
-    
-    # Syllabus navigation buttons
-    syllabus_options = {
-        "📖 I Year I Sem": "i_year_i_sem",
-        "📖 I Year II Sem": "i_year_ii_sem",
-        "📖 II Year I Sem": "ii_year_i_sem",
-        "📖 II Year II Sem": "ii_year_ii_sem",
-        "📖 III Year I Sem": "iii_year_i_sem",
-        "📖 III Year II Sem": "iii_year_ii_sem",
-        "📖 IV Year I Sem": "iv_year_i_sem",
-        "📖 IV Year II Sem": "iv_year_ii_sem"
-    }
-    
-    for label, key in syllabus_options.items():
-        if st.button(label, use_container_width=True):
-            st.session_state.current_page = "Syllabus"
-            st.session_state.selected_syllabus = key
-            st.rerun()
-    
-    st.markdown("---")
-    st.markdown("### 📋 Resources")
+    st.markdown("### 📚 Resources")
     
     resource_options = {
         "📊 Attendance Rules": "attendance",
