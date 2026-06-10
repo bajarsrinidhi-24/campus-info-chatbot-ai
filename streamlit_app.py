@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import tempfile
 import re
 from PyPDF2 import PdfReader
 import google.generativeai as genai
@@ -13,33 +12,55 @@ st.set_page_config(page_title="Campus Chatbot with PDF Upload", page_icon="🎓"
 # ============================================
 # Get API Key from Streamlit Secrets
 # ============================================
-GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-genai.configure(api_key=GOOGLE_API_KEY)
+try:
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=GOOGLE_API_KEY)
+except:
+    st.error("⚠️ Google API Key not found in Secrets. Please add GOOGLE_API_KEY.")
+    st.stop()
 
 # ============================================
-# Try different models until one works
+# Initialize Model - Use the correct model name
 # ============================================
-def get_gemini_model():
-    """Try different model names until one works"""
-    models_to_try = [
-        'gemini-2.0-flash-exp',
-        'gemini-2.0-flash', 
-        'gemini-1.5-pro',
-        'gemini-pro'
-    ]
-    
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            # Test the model with a simple prompt
-            test_response = model.generate_content("test")
-            print(f"✅ Using model: {model_name}")
+@st.cache_resource
+def init_model():
+    """Initialize Gemini model with correct configuration"""
+    try:
+        # List available models for debugging
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name)
+        
+        # Try models in order of preference
+        preferred_models = [
+            'models/gemini-2.0-flash-exp',
+            'models/gemini-2.0-flash',
+            'models/gemini-1.5-flash',
+            'models/gemini-pro'
+        ]
+        
+        for model_name in preferred_models:
+            if model_name in available_models or 'gemini' in model_name:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    # Quick test
+                    test_response = model.generate_content("test")
+                    print(f"✅ Using model: {model_name}")
+                    return model
+                except:
+                    continue
+        
+        # If no model works, try the first available
+        if available_models:
+            first_model = available_models[0]
+            model = genai.GenerativeModel(first_model)
             return model
-        except Exception as e:
-            print(f"❌ Model {model_name} failed: {e}")
-            continue
-    
-    raise Exception("No working Gemini model found")
+            
+        return None
+    except Exception as e:
+        st.error(f"Model init error: {e}")
+        return None
 
 # ============================================
 # Initialize Session State
@@ -53,12 +74,10 @@ if "uploaded_files" not in st.session_state:
 if "model" not in st.session_state:
     st.session_state.model = None
 
-# Initialize model
+# Initialize model on first run
 if st.session_state.model is None:
-    try:
-        st.session_state.model = get_gemini_model()
-    except Exception as e:
-        st.error(f"Failed to initialize Gemini model: {e}")
+    with st.spinner("Initializing AI model..."):
+        st.session_state.model = init_model()
 
 # ============================================
 # Custom CSS
@@ -128,7 +147,7 @@ def extract_pdf_text(uploaded_file):
     text = ""
     try:
         pdf_reader = PdfReader(uploaded_file)
-        for page in pdf_reader.pages:
+        for page_num, page in enumerate(pdf_reader.pages):
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
@@ -153,22 +172,22 @@ def get_response(question, pdf_content):
         return "📚 **Please upload PDF files first!**\n\nGo to the sidebar, upload your PDFs, and click 'Process PDFs' to start asking questions."
     
     if st.session_state.model is None:
-        return "❌ **Model not initialized. Please refresh the page.**"
+        return "❌ **Model not initialized. Please refresh the page or check your API key.**"
     
     prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
     
-    Answer questions based ONLY on the following document content. If the answer is not in the documents, say "I don't have that information in the uploaded PDFs."
+    Answer questions based ONLY on the following document content. 
     
     DOCUMENT CONTENT:
-    {pdf_content[:30000]}
+    {pdf_content[:20000]}
     
     QUESTION: {question}
     
-    INSTRUCTIONS:
-    - Answer based only on the document content above
+    RULES:
+    - Answer ONLY based on the document content above
     - Be friendly and helpful
-    - Use emojis occasionally
-    - If the information is not in the documents, say so honestly
+    - If the answer is not in the document, say "I don't have that information in the uploaded PDFs"
+    - Keep answers concise
     
     ANSWER:"""
     
@@ -184,7 +203,7 @@ def get_simple_response(question):
     if re.search(r'(hi|hello|hey)', q):
         return "Hello! 👋 Welcome to Campus Chatbot! Please upload PDF files first, then I can answer questions based on them. 😊"
     else:
-        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files (syllabus, regulations, handbooks) in the sidebar and click 'Process PDFs'.\n\nThen I can answer any question based on those documents! 📄"
+        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files in the sidebar and click 'Process PDFs'.\n\nThen I can answer any question based on those documents! 📄"
 
 # ============================================
 # Sidebar - PDF Upload Section
@@ -228,6 +247,13 @@ with st.sidebar:
 # ============================================
 # Main Chat Interface
 # ============================================
+# Show model status
+if st.session_state.model:
+    st.success("✅ AI Model Ready")
+else:
+    st.error("❌ AI Model Failed to Load. Please check your API key.")
+    st.info("Go to Settings → Secrets and make sure GOOGLE_API_KEY is set correctly.")
+
 if st.session_state.pdf_text:
     st.success(f"✅ Knowledge Base Active: {len(st.session_state.uploaded_files)} PDF(s) loaded")
 else:
@@ -266,10 +292,12 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("🤔 Reading your documents..."):
             try:
-                if st.session_state.pdf_text:
+                if st.session_state.pdf_text and st.session_state.model:
                     answer = get_response(question, st.session_state.pdf_text)
-                else:
+                elif not st.session_state.pdf_text:
                     answer = get_simple_response(question)
+                else:
+                    answer = "❌ **AI Model not available.** Please check your API key in Secrets."
                 
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
