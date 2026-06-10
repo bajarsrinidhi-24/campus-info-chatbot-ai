@@ -2,14 +2,8 @@ import streamlit as st
 import os
 import tempfile
 import re
+from PyPDF2 import PdfReader
 import google.generativeai as genai
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
 
 # ============================================
 # Page Configuration
@@ -21,17 +15,14 @@ st.set_page_config(page_title="Campus Chatbot with PDF Upload", page_icon="🎓"
 # ============================================
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=GOOGLE_API_KEY)
-os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 
 # ============================================
 # Initialize Session State
 # ============================================
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "vectorstore" not in st.session_state:
-    st.session_state.vectorstore = None
-if "qa_chain" not in st.session_state:
-    st.session_state.qa_chain = None
+if "pdf_text" not in st.session_state:
+    st.session_state.pdf_text = ""
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
 
@@ -55,9 +46,6 @@ st.markdown("""
         font-size: 2rem;
         color: white;
     }
-    .main-header p {
-        color: rgba(255,255,255,0.9);
-    }
     .user-message {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -67,7 +55,6 @@ st.markdown("""
         max-width: 75%;
         float: right;
         clear: both;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     .bot-message {
         background: white;
@@ -86,11 +73,6 @@ st.markdown("""
         color: white;
         border-radius: 25px;
         border: none;
-        transition: all 0.3s ease;
-    }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -101,127 +83,105 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot with PDF Upload</h1>
-    <p>Upload PDFs and ask questions - Gemini AI will answer based on the documents!</p>
+    <p>Upload PDFs and ask questions - AI answers based on your documents!</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# Helper Functions
+# Extract PDF Text
 # ============================================
-def process_uploaded_files(uploaded_files):
-    """Process uploaded PDF files and create vector store"""
-    if not uploaded_files:
-        return None
-    
+def extract_pdf_text(uploaded_file):
+    """Extract text from uploaded PDF"""
+    text = ""
+    try:
+        pdf_reader = PdfReader(uploaded_file)
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+    except Exception as e:
+        st.error(f"Error reading PDF: {e}")
+    return text
+
+def process_pdfs(uploaded_files):
+    """Process all uploaded PDFs and combine text"""
     all_text = ""
-    file_names = []
+    for uploaded_file in uploaded_files:
+        text = extract_pdf_text(uploaded_file)
+        all_text += f"\n\n--- {uploaded_file.name} ---\n\n{text}"
+    return all_text
+
+# ============================================
+# Get AI Response based on PDF content
+# ============================================
+def get_response(question, pdf_content):
+    """Get response from Gemini based on PDF content"""
+    if not pdf_content:
+        return "📚 **Please upload PDF files first!**\n\nGo to the sidebar, upload your PDFs, and click 'Process PDFs' to start asking questions."
     
-    with st.spinner("📚 Processing PDF files..."):
-        for uploaded_file in uploaded_files:
-            # Save uploaded file to temp location
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-                tmp_file.write(uploaded_file.getvalue())
-                tmp_path = tmp_file.name
-                file_names.append(uploaded_file.name)
-            
-            try:
-                # Load PDF using simple method
-                loader = PyPDFLoader(tmp_path)
-                documents = loader.load()
-                
-                for doc in documents:
-                    all_text += doc.page_content + "\n\n"
-                
-                # Clean up temp file
-                os.unlink(tmp_path)
-                
-            except Exception as e:
-                st.error(f"Error processing {uploaded_file.name}: {e}")
+    prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
     
-    if not all_text:
-        return None
+    Answer questions based ONLY on the following document content. If the answer is not in the documents, say "I don't have that information in the uploaded PDFs."
     
-    # Split text into chunks
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        separators=["\n\n", "\n", " ", ""]
-    )
-    chunks = text_splitter.split_text(all_text)
+    DOCUMENT CONTENT:
+    {pdf_content[:30000]}
     
-    # Create embeddings and vector store using FAISS
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    vectorstore = FAISS.from_texts(chunks, embeddings)
+    QUESTION: {question}
     
-    # Setup QA chain
-    prompt_template = """You are Campus Bot, a helpful assistant for GNITS college.
-    Answer based on the provided context from uploaded PDFs.
-    Be friendly, accurate, and helpful.
-    If the answer is not in the context, say "I don't have that information in the uploaded PDFs."
+    INSTRUCTIONS:
+    - Answer based only on the document content above
+    - Be friendly and helpful
+    - Use emojis occasionally
+    - If the information is not in the documents, say so honestly
     
-    Context: {context}
+    ANSWER:"""
     
-    Question: {question}
-    
-    Answer:"""
-    
-    PROMPT = PromptTemplate(
-        template=prompt_template,
-        input_variables=["context", "question"]
-    )
-    
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
-    
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorstore.as_retriever(search_kwargs={"k": 5}),
-        chain_type_kwargs={"prompt": PROMPT}
-    )
-    
-    return qa_chain
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 def get_simple_response(question):
     """Fallback response when no PDFs are uploaded"""
     q = question.lower()
-    
     if re.search(r'(hi|hello|hey)', q):
         return "Hello! 👋 Welcome to Campus Chatbot! Please upload PDF files first, then I can answer questions based on them. 😊"
     else:
-        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files (syllabus, regulations, handbooks) using the sidebar. Once uploaded, I can answer any question based on those documents!\n\n**Upload your PDFs to get started!** 📄"
+        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files (syllabus, regulations, handbooks) in the sidebar and click 'Process PDFs'.\n\nThen I can answer any question based on those documents! 📄"
 
 # ============================================
 # Sidebar - PDF Upload Section
 # ============================================
 with st.sidebar:
     st.markdown("### 📄 Upload PDF Documents")
-    st.markdown("Upload your academic PDFs (syllabus, regulations, handbooks)")
-
+    
     uploaded_files = st.file_uploader(
         "Choose PDF files",
         type=['pdf'],
         accept_multiple_files=True,
-        help="Upload PDFs containing academic information"
+        help="Upload PDFs containing academic information (syllabus, regulations, etc.)"
     )
-
+    
     if uploaded_files:
         st.success(f"✅ {len(uploaded_files)} file(s) selected")
         
         if st.button("🚀 Process PDFs", use_container_width=True):
-            with st.spinner("Processing PDFs and building knowledge base..."):
-                st.session_state.qa_chain = process_uploaded_files(uploaded_files)
-                if st.session_state.qa_chain:
-                    st.session_state.uploaded_files = uploaded_files
-                    st.success("✅ PDFs processed successfully! You can now ask questions.")
-                    st.rerun()
+            with st.spinner("📚 Processing PDFs..."):
+                st.session_state.pdf_text = process_pdfs(uploaded_files)
+                st.session_state.uploaded_files = uploaded_files
+                st.success(f"✅ Processed {len(uploaded_files)} PDF(s)! You can now ask questions.")
+                st.rerun()
+    
+    if st.session_state.pdf_text:
+        st.info(f"📊 Active: {len(st.session_state.uploaded_files)} PDF(s) loaded")
     
     st.markdown("---")
     st.markdown("### ℹ️ How it works")
     st.info("""
     1. 📄 Upload PDF files
     2. 🔄 Click 'Process PDFs'
-    3. 💬 Ask questions based on the documents
-    4. 🤖 AI answers using PDF content
+    3. 💬 Ask questions
+    4. 🤖 AI answers based on your PDFs
     """)
     
     if st.button("🗑️ Clear Chat", use_container_width=True):
@@ -231,10 +191,10 @@ with st.sidebar:
 # ============================================
 # Main Chat Interface
 # ============================================
-if st.session_state.qa_chain:
-    st.success(f"✅ Active Knowledge Base: {len(st.session_state.uploaded_files)} PDF(s) loaded")
+if st.session_state.pdf_text:
+    st.success(f"✅ Knowledge Base Active: {len(st.session_state.uploaded_files)} PDF(s) loaded")
 else:
-    st.warning("⚠️ No PDFs processed yet. Upload PDFs in the sidebar and click 'Process PDFs' to start.")
+    st.warning("⚠️ No PDFs processed. Upload PDFs in the sidebar and click 'Process PDFs'.")
 
 st.markdown("### 💬 Chat with Campus Bot")
 
@@ -269,9 +229,8 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("🤔 Searching through your documents..."):
             try:
-                if st.session_state.qa_chain:
-                    result = st.session_state.qa_chain.invoke({"query": question})
-                    answer = result["result"]
+                if st.session_state.pdf_text:
+                    answer = get_response(question, st.session_state.pdf_text)
                 else:
                     answer = get_simple_response(question)
                 
@@ -283,7 +242,7 @@ if question:
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 if not st.session_state.messages:
-    if st.session_state.qa_chain:
-        st.info("📚 **Ready!** Uploaded PDFs are processed. Ask me anything about the content! 🎓")
+    if st.session_state.pdf_text:
+        st.info("📚 **Ready!** Ask me anything about your uploaded PDFs! 🎓")
     else:
         st.info("📄 **Upload PDF files** in the sidebar and click 'Process PDFs' to start asking questions!")
