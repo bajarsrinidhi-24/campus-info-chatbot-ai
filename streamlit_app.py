@@ -1,10 +1,10 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # Get API key from Streamlit Secrets
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Custom CSS
 st.markdown("""
@@ -139,7 +139,8 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("🤔 Thinking..."):
             try:
-                response = openai.ChatCompletion.create(
+                # Updated OpenAI v1.0+ syntax
+                response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
                         {"role": "system", "content": """You are Campus Bot, a helpful assistant for GNITS college. 
