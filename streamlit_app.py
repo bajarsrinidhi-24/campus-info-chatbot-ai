@@ -3,9 +3,17 @@ import google.generativeai as genai
 
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
-# Get Google API key from Streamlit Secrets
+# Configure Gemini
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Use the correct model - try these in order
+try:
+    model = genai.GenerativeModel('gemini-2.5-flash')
+except:
+    try:
+        model = genai.GenerativeModel('gemini-2.0-flash')
+    except:
+        model = genai.GenerativeModel('gemini-pro')
 
 # Custom CSS
 st.markdown("""
@@ -151,9 +159,8 @@ Answer questions about:
 - Fee: B.Tech ₹1,62,000/year, M.Tech ₹1,12,000/year
 - Placements: Highest 50 LPA (Microsoft), ServiceNow 42.6 LPA
 - Facilities: Library 8AM-8PM, Hostel, Sports
-- Professional Electives (PE1 to PE6)
 
-Be friendly, helpful, and use emojis. Answer this question:
+Be friendly and conversational. Answer this question:
 
 Question: {question}
 
@@ -165,7 +172,7 @@ Answer:"""
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
                 st.error(f"Error: {e}")
-                st.info("Please check your Google API key in Secrets.")
+                st.info("Please check your Google API key in Secrets. Make sure the model name is correct.")
 
 if not st.session_state.messages:
     st.info("👋 **Hello!** I'm Campus Chatbot. Ask me about IT syllabus, attendance, fees, placements, exams, or anything about GNITS! 😊")
