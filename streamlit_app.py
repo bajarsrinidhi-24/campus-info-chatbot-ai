@@ -1,13 +1,14 @@
 import streamlit as st
-import os
 import re
+import os
+import tempfile
 from PyPDF2 import PdfReader
 import google.generativeai as genai
 
 # ============================================
 # Page Configuration
 # ============================================
-st.set_page_config(page_title="Campus Chatbot with PDF Upload", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
 # Get API Key from Streamlit Secrets
@@ -16,54 +17,77 @@ try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=GOOGLE_API_KEY)
 except:
-    st.error("⚠️ Google API Key not found in Secrets. Please add GOOGLE_API_KEY.")
+    st.error("⚠️ Google API Key not found in Secrets")
     st.stop()
 
 # ============================================
-# Initialize Model - Use the correct model name
+# Initialize Gemini Model - gemini-2.0-flash-lite
 # ============================================
 @st.cache_resource
-def init_model():
-    """Initialize Gemini model with correct configuration"""
+def get_model():
     try:
-        # List available models for debugging
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        # Try models in order of preference
-        preferred_models = [
-            'models/gemini-2.0-flash-exp',
-            'models/gemini-2.0-flash',
-            'models/gemini-1.5-flash',
-            'models/gemini-pro'
-        ]
-        
-        for model_name in preferred_models:
-            if model_name in available_models or 'gemini' in model_name:
-                try:
-                    model = genai.GenerativeModel(model_name)
-                    # Quick test
-                    test_response = model.generate_content("test")
-                    print(f"✅ Using model: {model_name}")
-                    return model
-                except:
-                    continue
-        
-        # If no model works, try the first available
-        if available_models:
-            first_model = available_models[0]
-            model = genai.GenerativeModel(first_model)
-            return model
-            
-        return None
+        # Using gemini-2.0-flash-lite for higher free tier limits
+        # Free tier: ~100+ requests per day
+        model = genai.GenerativeModel('gemini-2.0-flash-lite')
+        # Test the model
+        test_response = model.generate_content("OK")
+        st.success("✅ AI Model Ready (gemini-2.0-flash-lite)")
+        return model
     except Exception as e:
-        st.error(f"Model init error: {e}")
+        st.error(f"Model error: {e}")
         return None
 
+model = get_model()
+
 # ============================================
-# Initialize Session State
+# GNITS Website Data (Pre-scraped knowledge)
+# ============================================
+GNITS_WEBSITE_DATA = """
+G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
+
+📝 ADMISSIONS:
+- UG: TG-EAPCET exam required. Eligibility: 10+2 with Physics, Chemistry, Mathematics
+- PG: Based on GATE score or TS-PGECET
+- Contact Admissions: 040-29565856
+
+💰 FEE STRUCTURE:
+- B.Tech: ₹1,62,000 per year + JNTUH fees
+- M.Tech: ₹1,12,000 per year
+- NRI Category: USD 5,000 + JNTUH fees per year
+
+🏆 PLACEMENTS:
+- Highest Package: 50 LPA (Microsoft)
+- Second Highest: 42.6 LPA (ServiceNow)
+- Top Recruiters: Microsoft, ServiceNow, Deloitte, Snowflake, PwC
+
+📚 FACILITIES:
+- Library: 8 AM to 8 PM (Monday-Saturday)
+- Hostel: Girls hostel with 24/7 security
+- Sports: Indoor badminton, table tennis, volleyball, basketball
+- Canteen: Vegetarian and non-vegetarian options
+
+🎉 CLUBS & EVENTS:
+- Coding Club (CodeChef, LeetCode competitions)
+- Robotics Club
+- Entrepreneurship Development Cell (EDC)
+- Cultural Committee (Splash annual fest)
+- Technical Club (GNITS ACM Student Chapter)
+
+📞 IMPORTANT CONTACTS:
+- Principal Office: 040-29565850
+- Admissions: 040-29565856
+- Training & Placement Cell: 040-29565860
+- Library: 040-29565870
+
+🏫 ABOUT:
+- Established: 1997
+- Type: Women's Engineering College
+- Location: Hyderabad, Telangana
+- Accreditation: NBA, NAAC 'A' Grade
+"""
+
+# ============================================
+# Session State Initialization
 # ============================================
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -71,13 +95,82 @@ if "pdf_text" not in st.session_state:
     st.session_state.pdf_text = ""
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
-if "model" not in st.session_state:
-    st.session_state.model = None
 
-# Initialize model on first run
-if st.session_state.model is None:
-    with st.spinner("Initializing AI model..."):
-        st.session_state.model = init_model()
+# ============================================
+# PDF Processing Functions
+# ============================================
+def extract_pdf_text(uploaded_file):
+    """Extract text from uploaded PDF"""
+    text = ""
+    try:
+        pdf_reader = PdfReader(uploaded_file)
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+    except Exception as e:
+        st.error(f"Error reading PDF: {e}")
+    return text
+
+def process_pdfs(uploaded_files):
+    """Process all uploaded PDFs and combine text"""
+    all_text = ""
+    for uploaded_file in uploaded_files:
+        text = extract_pdf_text(uploaded_file)
+        all_text += f"\n\n--- {uploaded_file.name} ---\n\n{text}"
+    return all_text
+
+# ============================================
+# Response Generation
+# ============================================
+def get_response(question):
+    """Generate response using ALL available sources"""
+    
+    # Build context from all sources
+    context_sources = []
+    
+    # 1. Add GNITS Website Data
+    context_sources.append(f"GNITS WEBSITE INFORMATION:\n{GNITS_WEBSITE_DATA}")
+    
+    # 2. Add PDF content if available
+    if st.session_state.pdf_text:
+        context_sources.append(f"UPLOADED PDF DOCUMENTS:\n{st.session_state.pdf_text[:15000]}")
+    
+    combined_context = "\n\n---\n\n".join(context_sources)
+    
+    prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
+    
+    Use the following information to answer questions. If the information is not in any source, use your general knowledge but be honest that it's not from official sources.
+    
+    SOURCES:
+    {combined_context}
+    
+    QUESTION: {question}
+    
+    INSTRUCTIONS:
+    - Be friendly and conversational
+    - Use emojis occasionally
+    - If answering from personal knowledge (not sources), say "Based on general knowledge..."
+    - For casual questions like "How are you?", respond naturally
+    
+    ANSWER:"""
+    
+    try:
+        if model:
+            response = model.generate_content(prompt)
+            return response.text
+        else:
+            return "Model not available. Please check API key."
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def get_simple_response(question):
+    """Fallback response when no model is available"""
+    q = question.lower()
+    if re.search(r'(hi|hello|hey)', q):
+        return "Hello! 👋 Welcome to Campus Chatbot! How can I help you today?"
+    else:
+        return "📚 **Welcome to Campus Chatbot!**\n\nAsk me about GNITS college, upload PDFs, or just chat with me! 😊"
 
 # ============================================
 # Custom CSS
@@ -134,79 +227,13 @@ st.markdown("""
 # ============================================
 st.markdown("""
 <div class="main-header">
-    <h1>🎓 Campus Chatbot with PDF Upload</h1>
-    <p>Upload PDFs and ask questions - AI answers based on your documents!</p>
+    <h1>🎓 Campus Chatbot</h1>
+    <p>GNITS Website Info + PDF Documents + AI Assistant</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# Extract PDF Text
-# ============================================
-def extract_pdf_text(uploaded_file):
-    """Extract text from uploaded PDF"""
-    text = ""
-    try:
-        pdf_reader = PdfReader(uploaded_file)
-        for page_num, page in enumerate(pdf_reader.pages):
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-    except Exception as e:
-        st.error(f"Error reading PDF: {e}")
-    return text
-
-def process_pdfs(uploaded_files):
-    """Process all uploaded PDFs and combine text"""
-    all_text = ""
-    for uploaded_file in uploaded_files:
-        text = extract_pdf_text(uploaded_file)
-        all_text += f"\n\n--- {uploaded_file.name} ---\n\n{text}"
-    return all_text
-
-# ============================================
-# Get AI Response based on PDF content
-# ============================================
-def get_response(question, pdf_content):
-    """Get response from Gemini based on PDF content"""
-    if not pdf_content:
-        return "📚 **Please upload PDF files first!**\n\nGo to the sidebar, upload your PDFs, and click 'Process PDFs' to start asking questions."
-    
-    if st.session_state.model is None:
-        return "❌ **Model not initialized. Please refresh the page or check your API key.**"
-    
-    prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
-    
-    Answer questions based ONLY on the following document content. 
-    
-    DOCUMENT CONTENT:
-    {pdf_content[:20000]}
-    
-    QUESTION: {question}
-    
-    RULES:
-    - Answer ONLY based on the document content above
-    - Be friendly and helpful
-    - If the answer is not in the document, say "I don't have that information in the uploaded PDFs"
-    - Keep answers concise
-    
-    ANSWER:"""
-    
-    try:
-        response = st.session_state.model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-def get_simple_response(question):
-    """Fallback response when no PDFs are uploaded"""
-    q = question.lower()
-    if re.search(r'(hi|hello|hey)', q):
-        return "Hello! 👋 Welcome to Campus Chatbot! Please upload PDF files first, then I can answer questions based on them. 😊"
-    else:
-        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files in the sidebar and click 'Process PDFs'.\n\nThen I can answer any question based on those documents! 📄"
-
-# ============================================
-# Sidebar - PDF Upload Section
+# Sidebar
 # ============================================
 with st.sidebar:
     st.markdown("### 📄 Upload PDF Documents")
@@ -215,7 +242,7 @@ with st.sidebar:
         "Choose PDF files",
         type=['pdf'],
         accept_multiple_files=True,
-        help="Upload PDFs containing academic information"
+        help="Upload additional PDFs (syllabus, regulations, etc.)"
     )
     
     if uploaded_files:
@@ -229,15 +256,14 @@ with st.sidebar:
                 st.rerun()
     
     if st.session_state.pdf_text:
-        st.info(f"📊 Active: {len(st.session_state.uploaded_files)} PDF(s) loaded")
+        st.info(f"📊 PDFs Loaded: {len(st.session_state.uploaded_files)}")
     
     st.markdown("---")
-    st.markdown("### ℹ️ How it works")
+    st.markdown("### ℹ️ Data Sources")
     st.info("""
-    1. 📄 Upload PDF files
-    2. 🔄 Click 'Process PDFs'
-    3. 💬 Ask questions
-    4. 🤖 AI answers based on your PDFs
+    ✅ **GNITS Website** (Always available)
+    ✅ **Uploaded PDFs** (Your documents)
+    ✅ **Gemini AI** (General knowledge)
     """)
     
     if st.button("🗑️ Clear Chat", use_container_width=True):
@@ -247,17 +273,14 @@ with st.sidebar:
 # ============================================
 # Main Chat Interface
 # ============================================
-# Show model status
-if st.session_state.model:
-    st.success("✅ AI Model Ready")
-else:
-    st.error("❌ AI Model Failed to Load. Please check your API key.")
-    st.info("Go to Settings → Secrets and make sure GOOGLE_API_KEY is set correctly.")
-
+# Status indicators
+st.success("✅ GNITS Website Data Loaded")
 if st.session_state.pdf_text:
-    st.success(f"✅ Knowledge Base Active: {len(st.session_state.uploaded_files)} PDF(s) loaded")
+    st.success(f"✅ PDF Knowledge Base Active ({len(st.session_state.uploaded_files)} file(s))")
+if model:
+    st.success("✅ AI Model Ready (gemini-2.0-flash-lite)")
 else:
-    st.warning("⚠️ No PDFs processed. Upload PDFs in the sidebar and click 'Process PDFs'.")
+    st.error("❌ AI Model Failed to Load")
 
 st.markdown("### 💬 Chat with Campus Bot")
 
@@ -281,7 +304,7 @@ for msg in st.session_state.messages:
         """, unsafe_allow_html=True)
 
 # Chat input
-question = st.chat_input("Ask about your uploaded PDFs...")
+question = st.chat_input("Ask about GNITS, uploaded PDFs, or anything...")
 
 if question:
     st.session_state.messages.append({"role": "user", "content": question})
@@ -290,23 +313,16 @@ if question:
         st.markdown(question)
     
     with st.chat_message("assistant"):
-        with st.spinner("🤔 Reading your documents..."):
+        with st.spinner("🤔 Thinking..."):
             try:
-                if st.session_state.pdf_text and st.session_state.model:
-                    answer = get_response(question, st.session_state.pdf_text)
-                elif not st.session_state.pdf_text:
-                    answer = get_simple_response(question)
+                if model:
+                    answer = get_response(question)
                 else:
-                    answer = "❌ **AI Model not available.** Please check your API key in Secrets."
-                
+                    answer = get_simple_response(question)
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
-                error_msg = f"Error: {str(e)}"
-                st.error(error_msg)
+                st.error(f"Error: {e}")
 
 if not st.session_state.messages:
-    if st.session_state.pdf_text:
-        st.info("📚 **Ready!** Ask me anything about your uploaded PDFs! 🎓")
-    else:
-        st.info("📄 **Upload PDF files** in the sidebar and click 'Process PDFs' to start asking questions!")
+    st.info("👋 **Hello!** Ask me about GNITS college, your uploaded PDFs, or just chat with me! 😊")
