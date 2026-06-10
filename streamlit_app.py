@@ -1,12 +1,13 @@
 import streamlit as st
 import os
 import tempfile
-from typing import List
+import re
 import google.generativeai as genai
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 
@@ -91,13 +92,6 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(102,126,234,0.4);
     }
-    .upload-box {
-        border: 2px dashed #667eea;
-        border-radius: 20px;
-        padding: 1rem;
-        text-align: center;
-        background: rgba(102,126,234,0.05);
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,25 +113,24 @@ def process_uploaded_files(uploaded_files):
     if not uploaded_files:
         return None
     
-    all_documents = []
+    all_text = ""
+    file_names = []
     
-    with st.spinner("📚 Processing PDF files... This may take a moment."):
+    with st.spinner("📚 Processing PDF files..."):
         for uploaded_file in uploaded_files:
             # Save uploaded file to temp location
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
                 tmp_file.write(uploaded_file.getvalue())
                 tmp_path = tmp_file.name
+                file_names.append(uploaded_file.name)
             
             try:
-                # Load PDF
+                # Load PDF using simple method
                 loader = PyPDFLoader(tmp_path)
                 documents = loader.load()
                 
-                # Add metadata
                 for doc in documents:
-                    doc.metadata["source"] = uploaded_file.name
-                
-                all_documents.extend(documents)
+                    all_text += doc.page_content + "\n\n"
                 
                 # Clean up temp file
                 os.unlink(tmp_path)
@@ -145,29 +138,26 @@ def process_uploaded_files(uploaded_files):
             except Exception as e:
                 st.error(f"Error processing {uploaded_file.name}: {e}")
     
-    if not all_documents:
+    if not all_text:
         return None
     
-    # Split documents into chunks
+    # Split text into chunks
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200,
         separators=["\n\n", "\n", " ", ""]
     )
-    chunks = text_splitter.split_documents(all_documents)
+    chunks = text_splitter.split_text(all_text)
     
-    # Create embeddings and vector store
+    # Create embeddings and vector store using FAISS
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    vectorstore = Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        collection_name="pdf_knowledge"
-    )
+    vectorstore = FAISS.from_texts(chunks, embeddings)
     
     # Setup QA chain
     prompt_template = """You are Campus Bot, a helpful assistant for GNITS college.
     Answer based on the provided context from uploaded PDFs.
     Be friendly, accurate, and helpful.
+    If the answer is not in the context, say "I don't have that information in the uploaded PDFs."
     
     Context: {context}
     
@@ -197,14 +187,8 @@ def get_simple_response(question):
     
     if re.search(r'(hi|hello|hey)', q):
         return "Hello! 👋 Welcome to Campus Chatbot! Please upload PDF files first, then I can answer questions based on them. 😊"
-    elif re.search(r'(fee|fees|cost|tuition)', q):
-        return "💰 Please upload the fee structure PDF to get accurate information about B.Tech fees."
-    elif re.search(r'(attendance|75%)', q):
-        return "📊 Please upload the academic regulations PDF to get accurate attendance policy information."
-    elif re.search(r'(placement|package|lpa)', q):
-        return "🏆 Please upload the placement brochure PDF to get detailed placement statistics."
     else:
-        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files (syllabus, regulations, handbooks) using the sidebar. Once uploaded, I can answer any question based on those documents!\n\n**You can ask me about:**\n• Course syllabus and subjects\n• Academic regulations and attendance\n• Fee structure\n• Placement details\n• Exam patterns and grading\n\n**Upload your PDFs to get started!** 📄"
+        return "📚 **Welcome to Campus Chatbot!**\n\nPlease upload PDF files (syllabus, regulations, handbooks) using the sidebar. Once uploaded, I can answer any question based on those documents!\n\n**Upload your PDFs to get started!** 📄"
 
 # ============================================
 # Sidebar - PDF Upload Section
