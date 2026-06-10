@@ -17,6 +17,31 @@ GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # ============================================
+# Try different models until one works
+# ============================================
+def get_gemini_model():
+    """Try different model names until one works"""
+    models_to_try = [
+        'gemini-2.0-flash-exp',
+        'gemini-2.0-flash', 
+        'gemini-1.5-pro',
+        'gemini-pro'
+    ]
+    
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            # Test the model with a simple prompt
+            test_response = model.generate_content("test")
+            print(f"✅ Using model: {model_name}")
+            return model
+        except Exception as e:
+            print(f"❌ Model {model_name} failed: {e}")
+            continue
+    
+    raise Exception("No working Gemini model found")
+
+# ============================================
 # Initialize Session State
 # ============================================
 if "messages" not in st.session_state:
@@ -25,6 +50,15 @@ if "pdf_text" not in st.session_state:
     st.session_state.pdf_text = ""
 if "uploaded_files" not in st.session_state:
     st.session_state.uploaded_files = []
+if "model" not in st.session_state:
+    st.session_state.model = None
+
+# Initialize model
+if st.session_state.model is None:
+    try:
+        st.session_state.model = get_gemini_model()
+    except Exception as e:
+        st.error(f"Failed to initialize Gemini model: {e}")
 
 # ============================================
 # Custom CSS
@@ -40,7 +74,6 @@ st.markdown("""
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 20px;
         margin-bottom: 2rem;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
     .main-header h1 {
         font-size: 2rem;
@@ -96,7 +129,9 @@ def extract_pdf_text(uploaded_file):
     try:
         pdf_reader = PdfReader(uploaded_file)
         for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
     except Exception as e:
         st.error(f"Error reading PDF: {e}")
     return text
@@ -117,6 +152,9 @@ def get_response(question, pdf_content):
     if not pdf_content:
         return "📚 **Please upload PDF files first!**\n\nGo to the sidebar, upload your PDFs, and click 'Process PDFs' to start asking questions."
     
+    if st.session_state.model is None:
+        return "❌ **Model not initialized. Please refresh the page.**"
+    
     prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
     
     Answer questions based ONLY on the following document content. If the answer is not in the documents, say "I don't have that information in the uploaded PDFs."
@@ -135,8 +173,7 @@ def get_response(question, pdf_content):
     ANSWER:"""
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
+        response = st.session_state.model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"Error: {str(e)}"
@@ -159,7 +196,7 @@ with st.sidebar:
         "Choose PDF files",
         type=['pdf'],
         accept_multiple_files=True,
-        help="Upload PDFs containing academic information (syllabus, regulations, etc.)"
+        help="Upload PDFs containing academic information"
     )
     
     if uploaded_files:
@@ -169,7 +206,7 @@ with st.sidebar:
             with st.spinner("📚 Processing PDFs..."):
                 st.session_state.pdf_text = process_pdfs(uploaded_files)
                 st.session_state.uploaded_files = uploaded_files
-                st.success(f"✅ Processed {len(uploaded_files)} PDF(s)! You can now ask questions.")
+                st.success(f"✅ Processed {len(uploaded_files)} PDF(s)!")
                 st.rerun()
     
     if st.session_state.pdf_text:
@@ -227,7 +264,7 @@ if question:
         st.markdown(question)
     
     with st.chat_message("assistant"):
-        with st.spinner("🤔 Searching through your documents..."):
+        with st.spinner("🤔 Reading your documents..."):
             try:
                 if st.session_state.pdf_text:
                     answer = get_response(question, st.session_state.pdf_text)
@@ -239,7 +276,6 @@ if question:
             except Exception as e:
                 error_msg = f"Error: {str(e)}"
                 st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
 if not st.session_state.messages:
     if st.session_state.pdf_text:
