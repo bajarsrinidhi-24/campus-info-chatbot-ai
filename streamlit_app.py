@@ -1,10 +1,11 @@
 import streamlit as st
-from openai import OpenAI
+import google.generativeai as genai
 
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
-# Get API key from Streamlit Secrets
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Get Google API key from Streamlit Secrets
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # Custom CSS
 st.markdown("""
@@ -139,34 +140,32 @@ if question:
     with st.chat_message("assistant"):
         with st.spinner("🤔 Thinking..."):
             try:
-                # Updated OpenAI v1.0+ syntax
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {"role": "system", "content": """You are Campus Bot, a helpful assistant for GNITS college. 
-                        Answer questions about:
-                        - IT Syllabus (I, II, III, IV years)
-                        - Attendance: 75% minimum, condonation up to 65%
-                        - Grading: O(10), A+(9), A(8), B+(7), B(6), C(5), F(0)
-                        - SGPA/CGPA calculation
-                        - Exam pattern: CIE 40% + SEE 60%
-                        - Fee: B.Tech ₹1,62,000/year, M.Tech ₹1,12,000/year
-                        - Placements: Highest 50 LPA (Microsoft), ServiceNow 42.6 LPA
-                        - Facilities: Library 8AM-8PM, Hostel, Sports
-                        - Professional Electives (PE1 to PE6)
-                        
-                        Be friendly, helpful, and use emojis. If unsure, say so politely."""},
-                        {"role": "user", "content": question}
-                    ],
-                    temperature=0.7,
-                    max_tokens=500
-                )
-                answer = response.choices[0].message.content
+                prompt = f"""You are Campus Bot, a helpful assistant for GNITS college. 
+                
+Answer questions about:
+- IT Syllabus (I, II, III, IV years)
+- Attendance: 75% minimum, condonation up to 65%
+- Grading: O(10), A+(9), A(8), B+(7), B(6), C(5), F(0)
+- SGPA/CGPA calculation
+- Exam pattern: CIE 40% + SEE 60%
+- Fee: B.Tech ₹1,62,000/year, M.Tech ₹1,12,000/year
+- Placements: Highest 50 LPA (Microsoft), ServiceNow 42.6 LPA
+- Facilities: Library 8AM-8PM, Hostel, Sports
+- Professional Electives (PE1 to PE6)
+
+Be friendly, helpful, and use emojis. Answer this question:
+
+Question: {question}
+
+Answer:"""
+                
+                response = model.generate_content(prompt)
+                answer = response.text
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
                 st.error(f"Error: {e}")
-                st.info("Please check your OpenAI API key in Secrets.")
+                st.info("Please check your Google API key in Secrets.")
 
 if not st.session_state.messages:
     st.info("👋 **Hello!** I'm Campus Chatbot. Ask me about IT syllabus, attendance, fees, placements, exams, or anything about GNITS! 😊")
