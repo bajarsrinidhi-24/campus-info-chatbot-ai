@@ -3,16 +3,11 @@ import re
 import os
 import tempfile
 from PyPDF2 import PdfReader
+from difflib import get_close_matches
 
 # ============================================
-# Try to import AI libraries (optional)
+# Try to import Google Gemini AI
 # ============================================
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except:
-    OPENAI_AVAILABLE = False
-
 try:
     import google.generativeai as genai
     GEMINI_AVAILABLE = True
@@ -25,29 +20,35 @@ except:
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
-# Initialize AI Client (if API key available)
+# Initialize Gemini AI (if API key available)
 # ============================================
-def init_ai_client():
-    """Initialize OpenAI or Gemini client from secrets"""
-    
-    # Try OpenAI first
+def init_gemini():
+    """Initialize Google Gemini AI from secrets"""
     try:
-        openai.api_key = st.secrets.get("OPENAI_API_KEY")
-        if openai.api_key:
-            return "openai", openai
-    except:
-        pass
-    
-    # Try Gemini
-    try:
-        genai.configure(api_key=st.secrets.get("GOOGLE_API_KEY"))
-        return "gemini", genai
-    except:
-        pass
-    
+        api_key = st.secrets.get("GOOGLE_API_KEY")
+        if api_key:
+            genai.configure(api_key=api_key)
+            # Try different model names
+            models_to_try = [
+                'gemini-2.0-flash-lite',
+                'gemini-2.0-flash', 
+                'gemini-1.5-flash',
+                'gemini-pro'
+            ]
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    # Quick test
+                    test_response = model.generate_content("OK")
+                    return model, model_name
+                except:
+                    continue
+    except Exception as e:
+        st.error(f"Gemini init error: {e}")
     return None, None
 
-AI_TYPE, AI_CLIENT = init_ai_client()
+# Initialize Gemini
+gemini_model, gemini_model_name = init_gemini()
 
 # ============================================
 # Session State Initialization
@@ -86,6 +87,36 @@ def process_pdfs(uploaded_files):
     return all_text
 
 # ============================================
+# Spelling Correction Function
+# ============================================
+def correct_spelling(word, word_list):
+    """Correct spelling mistakes using fuzzy matching"""
+    matches = get_close_matches(word.lower(), word_list, n=1, cutoff=0.6)
+    if matches:
+        return matches[0]
+    return word
+
+def preprocess_question(question):
+    """Preprocess question to handle spelling mistakes"""
+    keywords = [
+        'admission', 'fee', 'placement', 'library', 'hostel', 'canteen', 
+        'sports', 'club', 'event', 'contact', 'principal', 'attendance',
+        'grade', 'exam', 'syllabus', 'semester', 'btech', 'mtech',
+        'cse', 'it', 'ece', 'eee', 'gnits', 'college', 'sum', 'rule'
+    ]
+    
+    words = question.split()
+    corrected_words = []
+    for word in words:
+        if len(word) > 3:
+            corrected = correct_spelling(word, keywords)
+            corrected_words.append(corrected)
+        else:
+            corrected_words.append(word)
+    
+    return ' '.join(corrected_words)
+
+# ============================================
 # Extract Name from User Message
 # ============================================
 def extract_name_from_message(message):
@@ -109,54 +140,72 @@ def extract_name_from_message(message):
     return None
 
 # ============================================
-# GNITS College Data (Hardcoded - Always Available)
+# Search PDF Content for Answer
+# ============================================
+def search_pdf_for_answer(question, pdf_text):
+    """Search through PDF content to find relevant answer"""
+    if not pdf_text:
+        return None
+    
+    keywords = question.lower().split()
+    stop_words = {'what', 'is', 'are', 'the', 'a', 'an', 'of', 'to', 'for', 'in', 'on', 'at', 'by', 'with', 'from'}
+    search_terms = [w for w in keywords if w not in stop_words and len(w) > 2]
+    
+    if not search_terms:
+        return None
+    
+    pdf_lines = pdf_text.split('\n')
+    best_line = None
+    best_score = 0
+    
+    for line in pdf_lines:
+        if len(line) > 30:
+            line_lower = line.lower()
+            score = sum(1 for term in search_terms if term in line_lower)
+            if score > best_score and score >= 1:
+                best_score = score
+                best_line = line
+    
+    if best_line and best_score > 0:
+        return f"📄 **From your uploaded PDF:**\n\n{best_line[:600]}"
+    
+    return None
+
+# ============================================
+# GNITS College Data (Hardcoded)
 # ============================================
 GNITS_DATA = """
 G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
 
 📝 ADMISSIONS:
 - UG: TG-EAPCET exam required. Eligibility: 10+2 with PCM
-- PG: Based on GATE score or TS-PGECET
-- Contact Admissions: 040-29565856
+- PG: Based on GATE or TS-PGECET
+- Contact: 040-29565856
 
 💰 FEE STRUCTURE:
 - B.Tech: ₹1,62,000 per year + JNTUH fees
 - M.Tech: ₹1,12,000 per year
-- NRI Category: USD 5,000 + JNTUH fees
 
 🏆 PLACEMENTS:
-- Highest Package: 50 LPA (Microsoft)
-- Second Highest: 42.6 LPA (ServiceNow)
-- Top Recruiters: Microsoft, ServiceNow, Deloitte, Snowflake, PwC
+- Highest: 50 LPA (Microsoft)
+- Top Recruiters: Microsoft, ServiceNow, Deloitte, Snowflake
 
 📚 FACILITIES:
-- Library: 8 AM to 8 PM (Monday-Saturday)
-- Hostel: Girls hostel with 24/7 security
-- Sports: Indoor badminton, table tennis, volleyball, basketball
-- Canteen available
+- Library: 8 AM to 8 PM
+- Hostel: Girls hostel with security
+- Sports, Canteen available
 
-🎉 CLUBS & EVENTS:
-- Coding Club (CodeChef, LeetCode competitions)
-- Robotics Club
-- Entrepreneurship Development Cell (EDC)
-- Cultural Committee (Splash annual fest)
-- Technical Club (GNITS ACM Student Chapter)
+🎉 CLUBS:
+- Coding Club, Robotics Club, EDC, Cultural Committee
 
-📞 IMPORTANT CONTACTS:
-- Principal Office: 040-29565850
+📞 CONTACTS:
+- Principal: 040-29565850
 - Admissions: 040-29565856
-- Training & Placement Cell: 040-29565860
-- Library: 040-29565870
-
-🏫 ABOUT:
-- Established: 1997
-- Type: Women's Engineering College
-- Location: Hyderabad, Telangana
-- Accreditation: NBA, NAAC 'A' Grade
+- Placements: 040-29565860
 """
 
 # ============================================
-# IT Syllabus Database (R25 Regulations)
+# IT Syllabus Database
 # ============================================
 IT_SYLLABUS = {
     "i_year_i_sem": """📚 **I YEAR I SEMESTER (R25) - 20 Credits**
@@ -168,107 +217,14 @@ IT_SYLLABUS = {
 | ESC | Programming for Problem Solving | 3 |
 | ESC | Basic Electrical Engineering | 3 |
 | MEC | Engineering Drawing & CAD | 3 |
-| Lab | Advanced Engineering Physics Lab | 1 |
+| Lab | Physics Lab | 1 |
 | Lab | Programming Lab | 1 |
-| Lab | Basic Electrical Engineering Lab | 1 |
+| Lab | Electrical Lab | 1 |
 | Lab | IT Workshop | 1 |""",
-
-    "i_year_ii_sem": """📚 **I YEAR II SEMESTER (R25) - 20 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| BSC | ODE and Vector Calculus | 3 |
-| BSC | Engineering Chemistry | 3 |
-| ESC | Data Structures | 3 |
-| ESC | Basic Electronics | 3 |
-| HSC | English for Skill Enhancement | 3 |
-| Lab | Engineering Chemistry Lab | 1 |
-| Lab | Data Structures Lab | 1 |
-| Lab | English & Communication Skills Lab | 1 |
-| Lab | Engineering Workshop | 1 |
-| Lab | Python Programming Lab | 1 |""",
-
-    "ii_year_i_sem": """📚 **II YEAR I SEMESTER (R25) - 22 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| BSC | Mathematical & Statistical Foundations | 3 |
-| PC | Computer Organization & Microprocessor | 3 |
-| PC | Java Programming | 3 |
-| PC | Web Programming | 3 |
-| PC | Introduction to IoT | 3 |
-| HSC | Innovation and Entrepreneurship | 2 |
-| Lab | Java Programming Lab | 1 |
-| Lab | Web Programming Lab | 1 |
-| Lab | Internet of Things Lab | 1 |
-| SDC | Data Visualization | 1 |""",
-
-    "ii_year_ii_sem": """📚 **II YEAR II SEMESTER (R25) - 20 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| PC | Discrete Mathematics | 3 |
-| PC | Full Stack Development | 3 |
-| PC | Operating Systems | 3 |
-| PC | Database Management Systems | 3 |
-| PC | Algorithm Design and Analysis | 3 |
-| Lab | Full Stack Development Lab | 1 |
-| Lab | Operating Systems Lab | 1 |
-| Lab | DBMS Lab | 1 |
-| SDC | UI Design - Flutter | 1 |""",
-
-    "iii_year_i_sem": """📚 **III YEAR I SEMESTER (R25) - 21 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| PC | Software Engineering | 3 |
-| PC | Machine Learning | 3 |
-| PC | Computer Networks | 3 |
-| PE1 | Professional Elective-I | 3 |
-| OE1 | Open Elective-I | 2 |
-| Lab | Software Engineering Lab | 1 |
-| Lab | Machine Learning Lab | 1 |
-| Lab | Computer Networks Lab | 1 |
-| SDC | Prompt Engineering | 1 |""",
-
-    "iii_year_ii_sem": """📚 **III YEAR II SEMESTER (R25) - 20 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| PC | Information Security | 3 |
-| PC | Automata & Compiler Design | 3 |
-| HSC | Business Economics | 3 |
-| PE2 | Professional Elective-II | 3 |
-| OE2 | Open Elective-II | 2 |
-| Lab | Information Security Lab | 1 |
-| Lab | Automata & Compiler Design Lab | 1 |
-| Lab | DevOps Lab | 1 |
-| SDC | Big Data - Spark | 1 |""",
-
-    "iv_year_i_sem": """📚 **IV YEAR I SEMESTER (R25) - 21 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| PC | Cloud Computing | 3 |
-| PC | Natural Language Processing | 3 |
-| HSC | Fundamentals of Management | 3 |
-| PE3 | Professional Elective-III | 3 |
-| PE4 | Professional Elective-IV | 3 |
-| OE3 | Open Elective-III | 2 |
-| Lab | Cloud Computing Lab | 1 |
-| Lab | NLP Lab | 1 |""",
-
-    "iv_year_ii_sem": """📚 **IV YEAR II SEMESTER (R25) - 20 Credits**
-
-| Course | Subject | Credits |
-|--------|---------|---------|
-| PE5 | Professional Elective-V | 3 |
-| PE6 | Professional Elective-VI | 3 |
-| PW | Project Work | 14 |""",
 
     "attendance": """📊 **ATTENDANCE REQUIREMENTS (R25):**
 
-• Minimum 75% attendance required to appear for exams
+• Minimum 75% attendance required
 • Shortage up to 10% (65-74%) can be condoned
 • Below 65% → NO condonation, detained""",
 
@@ -291,172 +247,135 @@ Percentage = (CGPA - 0.5) × 10""",
 
     "exam_pattern": """📝 **EXAM PATTERN (R25):**
 
-**Theory Courses (100 marks):**
-• CIE: 40 marks (Mid-Terms:30, Assignments:5, Viva:5)
-• SEE: 60 marks (Part-A:10, Part-B:50)
+• CIE (Internal): 40 marks
+• SEE (End Sem): 60 marks
 • Duration: 3 hours""",
 
     "pe_electives": """📚 **PROFESSIONAL ELECTIVES (PE1-PE6):**
 
-**PE-1 (III-I):** Distributed Systems | AI | Cryptography | Optimization
-**PE-2 (III-II):** High Performance Computing | Deep Learning | Web Security | Software Testing
-**PE-3 (IV-I):** Distributed Databases | Data Analytics | Secure Coding | Mobile Computing
-**PE-4 (IV-I):** Scalable Architecture | Data Mining | Blockchain | 5G Technologies
-**PE-5 (IV-II):** Edge/Fog Computing | Reinforcement Learning | Cloud Security | Quantum Computing
-**PE-6 (IV-II):** AR/VR | Generative AI | Digital Forensics | Storage Area Networks""",
-
-    "open_electives": """📚 **OPEN ELECTIVES:**
-
-**By CSE:** OS Fundamentals, SQL, Computer Networks
-**By IT:** Java Programming, Full Stack, DBMS, DevOps
-**By CSM/CSD:** AI, Machine Learning, Data Mining, NLP
-**By ECE:** Image Processing, Wearable Devices"""
+**PE-1:** Distributed Systems | AI | Cryptography | Optimization
+**PE-2:** High Performance Computing | Deep Learning | Web Security
+**PE-3:** Distributed Databases | Data Analytics | Mobile Computing
+**PE-4:** Scalable Architecture | Data Mining | Blockchain
+**PE-5:** Edge Computing | Reinforcement Learning | Quantum Computing
+**PE-6:** AR/VR | Generative AI | Digital Forensics"""
 }
 
 # ============================================
-# AI-Powered Response (if available)
+# Get AI Response from Gemini
 # ============================================
-def get_ai_response(question, context):
-    """Get response from AI (OpenAI or Gemini)"""
-    
-    prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
-    
-    Context from GNITS data and PDFs:
-    {context}
-    
-    User question: {question}
-    
-    Rules:
-    - Be friendly and conversational
-    - Use emojis occasionally
-    - If you know the user's name (from conversation), use it
-    - Answer based on the context when possible
-    - For casual questions, respond naturally
-    
-    Answer:"""
-    
-    try:
-        if AI_TYPE == "openai":
-            response = AI_CLIENT.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are Campus Bot, a helpful assistant."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=500
-            )
-            return response.choices[0].message.content
-        elif AI_TYPE == "gemini":
-            model = AI_CLIENT.GenerativeModel('gemini-pro')
-            response = model.generate_content(prompt)
-            return response.text
-    except Exception as e:
+def get_gemini_response(question, context):
+    """Get response from Google Gemini AI"""
+    if not gemini_model:
         return None
     
-    return None
+    name_context = f"The user's name is {st.session_state.user_name}. " if st.session_state.user_name else ""
+    
+    prompt = f"""You are Campus Bot, a friendly assistant for GNITS college.
+
+{name_context}
+Context from college data:
+{context}
+
+User Question: {question}
+
+Rules:
+- Be friendly and conversational
+- Use emojis occasionally
+- Answer based on context
+- For casual questions, respond naturally
+
+Answer:"""
+
+    try:
+        response = gemini_model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return None
 
 # ============================================
-# Main Response Function (Hybrid: AI + Rule-based)
+# Main Response Function
 # ============================================
 def get_response(question):
-    q = question.lower().strip()
+    # Preprocess for spelling mistakes
+    corrected_question = preprocess_question(question)
+    q = corrected_question.lower().strip()
     
-    # 1. Check for name setting (always rule-based for reliability)
+    # 1. Check for name setting
     extracted_name = extract_name_from_message(question)
     if extracted_name:
         st.session_state.user_name = extracted_name
         return f"Nice to meet you, {extracted_name}! 👋 I'm Campus Bot. How can I help you today?"
     
-    # 2. Get user's name for personalized responses
     name_prefix = f"Hey {st.session_state.user_name}, " if st.session_state.user_name else ""
     
-    # 3. Build context from all sources
-    context = GNITS_DATA
+    # 2. Search uploaded PDFs
     if st.session_state.pdf_text:
-        context += f"\n\nPDF CONTENT:\n{st.session_state.pdf_text[:5000]}"
+        pdf_answer = search_pdf_for_answer(question, st.session_state.pdf_text)
+        if pdf_answer:
+            return pdf_answer
     
-    # 4. Try AI first if available (for better conversations)
-    if AI_TYPE:
-        try:
-            ai_response = get_ai_response(question, context)
-            if ai_response:
-                return ai_response
-        except:
-            pass  # Fall back to rule-based
+    # 3. Build context for AI
+    context = GNITS_DATA
     
-    # 5. Rule-based fallback responses (works without AI)
+    # 4. Try Gemini AI first (if available)
+    if gemini_model:
+        ai_response = get_gemini_response(question, context)
+        if ai_response:
+            return ai_response
     
-    # Casual conversations
-    if re.search(r'^(hi|hello|hey|namaste|good morning|good afternoon|good evening)', q):
-        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you today?"
+    # 5. Rule-based fallback (works without AI)
     
-    if re.search(r'how are you|how\'s it going', q):
-        return f"{name_prefix}I'm doing great! 😊 Thanks for asking! Ready to help you with GNITS info. How can I assist you?"
+    if re.search(r'fee|fees|cost|tuition', q):
+        return f"{name_prefix}{GNITS_DATA.split('💰 FEE STRUCTURE:')[1].split('🏆 PLACEMENTS:')[0]}"
     
-    if re.search(r'tell me a joke|make me laugh', q):
-        jokes = [
-            "Why did the student eat their homework? Because the teacher said it was a piece of cake! 😄",
-            "What do you call a computer that sings? A Dell-ophone! 🎵",
-            "Why did the programmer quit his job? Because he didn't get arrays! 😂"
-        ]
-        import random
-        return f"{name_prefix}{random.choice(jokes)}"
+    if re.search(r'admission|apply|eligibility', q):
+        return f"{name_prefix}{GNITS_DATA.split('📝 ADMISSIONS:')[1].split('💰 FEE STRUCTURE:')[0]}"
     
-    if re.search(r'thank|thanks|appreciate', q):
-        return f"{name_prefix}You're very welcome! 😊 I'm always here to help with anything about GNITS. Feel free to ask anytime!"
+    if re.search(r'placement|package|lpa|recruiter', q):
+        return f"{name_prefix}{GNITS_DATA.split('🏆 PLACEMENTS:')[1].split('📚 FACILITIES:')[0]}"
     
-    if re.search(r'stressed|worried|nervous', q):
-        return f"{name_prefix}Don't worry! 😊 GNITS has great support systems. Take a deep breath, make a plan, and remember you've got this! 💪"
+    if re.search(r'library|hostel|canteen|sports|facility', q):
+        return f"{name_prefix}{GNITS_DATA.split('📚 FACILITIES:')[1].split('🎉 CLUBS:')[0]}"
     
-    if re.search(r'favorite thing about gnits', q):
-        return f"{name_prefix}I love GNITS's strong placement record (50 LPA from Microsoft! 🏆) and the amazing clubs like Coding Club and Robotics Club! 🎓"
+    if re.search(r'club|event|hackathon|coding', q):
+        return f"{name_prefix}{GNITS_DATA.split('🎉 CLUBS:')[1].split('📞 CONTACTS:')[0]}"
     
-    # PDF content search
-    if st.session_state.pdf_text and len(q) > 5:
-        lines = st.session_state.pdf_text.split('\n')
-        for line in lines:
-            if any(keyword in line.lower() for keyword in q.split()[:3]):
-                if len(line) > 50:
-                    return f"📄 **From your uploaded PDF:**\n\n{line[:500]}"
+    if re.search(r'contact|phone|number', q):
+        return f"{name_prefix}{GNITS_DATA.split('📞 CONTACTS:')[1]}"
     
-    # IT Syllabus queries
-    if re.search(r'i year|1st year|first year|semester 1', q):
+    if re.search(r'i year|1st year|semester 1', q):
         return IT_SYLLABUS["i_year_i_sem"]
-    if re.search(r'i year ii|1st year 2nd|i-ii', q):
-        return IT_SYLLABUS["i_year_ii_sem"]
-    if re.search(r'ii year|2nd year|second year|ii-i', q):
-        return IT_SYLLABUS["ii_year_i_sem"]
-    if re.search(r'ii year ii|2nd year 2nd|ii-ii', q):
-        return IT_SYLLABUS["ii_year_ii_sem"]
-    if re.search(r'iii year|3rd year|third year', q):
-        return IT_SYLLABUS["iii_year_i_sem"]
-    if re.search(r'iv year|4th year|fourth year|final year', q):
-        return IT_SYLLABUS["iv_year_i_sem"]
     
-    # Academic rules
-    if re.search(r'attendance|condonation|75%', q):
+    if re.search(r'attendance|condonation', q):
         return IT_SYLLABUS["attendance"]
-    if re.search(r'grade|grading|gpa|sgpa|cgpa', q):
+    
+    if re.search(r'grade|grading|gpa|cgpa', q):
         return IT_SYLLABUS["grading"] + "\n\n" + IT_SYLLABUS["sgpa_cgpa"]
-    if re.search(r'exam|mid|see|cie|evaluation|pattern', q):
+    
+    if re.search(r'exam|pattern|cie|see', q):
         return IT_SYLLABUS["exam_pattern"]
+    
     if re.search(r'professional elective|pe', q):
         return IT_SYLLABUS["pe_electives"]
     
-    # GNITS queries
-    if re.search(r'fee|fees|cost|tuition', q):
-        return f"{name_prefix}{GNITS_DATA.split('💰 FEE STRUCTURE:')[1].split('🏆 PLACEMENTS:')[0]}"
-    if re.search(r'admission|apply|eligibility', q):
-        return f"{name_prefix}{GNITS_DATA.split('📝 ADMISSIONS:')[1].split('💰 FEE STRUCTURE:')[0]}"
-    if re.search(r'placement|package|recruiter|lpa', q):
-        return f"{name_prefix}{GNITS_DATA.split('🏆 PLACEMENTS:')[1].split('📚 FACILITIES:')[0]}"
-    if re.search(r'library|hostel|canteen|sports|facility', q):
-        return f"{name_prefix}{GNITS_DATA.split('📚 FACILITIES:')[1].split('🎉 CLUBS & EVENTS:')[0]}"
-    if re.search(r'club|event|hackathon|coding|robotics', q):
-        return f"{name_prefix}{GNITS_DATA.split('🎉 CLUBS & EVENTS:')[1].split('📞 IMPORTANT CONTACTS:')[0]}"
-    if re.search(r'contact|phone|number', q):
-        return f"{name_prefix}{GNITS_DATA.split('📞 IMPORTANT CONTACTS:')[1].split('🏫 ABOUT:')[0]}"
+    # Casual conversations
+    if re.search(r'^(hi|hello|hey|namaste)', q):
+        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you today?"
+    
+    if re.search(r'how are you', q):
+        return f"{name_prefix}I'm doing great! 😊 Thanks for asking! How can I assist you?"
+    
+    if re.search(r'thank|thanks', q):
+        return f"{name_prefix}You're very welcome! 😊 Anything else I can help with?"
+    
+    if re.search(r'stressed|worried', q):
+        return f"{name_prefix}Don't worry! 😊 You've got this! Take a deep breath. 💪"
+    
+    if re.search(r'sum rule', q):
+        if st.session_state.pdf_text:
+            return search_pdf_for_answer("sum rule", st.session_state.pdf_text)
+        return f"{name_prefix}I don't see a PDF uploaded. Please upload a PDF containing the sum rule information."
     
     # Default
     return f"""{name_prefix}😊 **I'm here to help!**
@@ -539,7 +458,7 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot</h1>
-    <p>GNITS College Info + IT Syllabus (R25) + PDF Upload</p>
+    <p>GNITS College Info + IT Syllabus (R25) + PDF Upload + Gemini AI</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -573,17 +492,14 @@ with st.sidebar:
             st.session_state.user_name = None
             st.rerun()
     else:
-        st.info("Say 'Call me [name]' to set your name")
+        st.info("Say 'Call me [name]'")
     
     st.markdown("---")
     st.markdown("### 🤖 AI Status")
-    if AI_TYPE == "openai":
-        st.success("✅ OpenAI Connected")
-    elif AI_TYPE == "gemini":
-        st.success("✅ Google Gemini Connected")
+    if gemini_model:
+        st.success(f"✅ Google Gemini Active ({gemini_model_name})")
     else:
-        st.warning("⚠️ No AI API key found. Using rule-based mode.")
-        st.info("Add OPENAI_API_KEY or GOOGLE_API_KEY to Secrets")
+        st.warning("⚠️ Gemini not available. Add GOOGLE_API_KEY to Secrets")
     
     st.markdown("---")
     st.markdown("### 📚 Quick Resources")
@@ -606,7 +522,6 @@ with st.sidebar:
 # ============================================
 # Main Chat Interface
 # ============================================
-# Status indicators
 col1, col2, col3 = st.columns(3)
 with col1:
     st.success("✅ GNITS College Data")
@@ -620,7 +535,6 @@ with col3:
 
 st.markdown("### 💬 Chat with Campus Bot")
 
-# Display chat messages
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"""
@@ -639,7 +553,6 @@ for msg in st.session_state.messages:
         </div>
         """, unsafe_allow_html=True)
 
-# Chat input
 question = st.chat_input("Ask about GNITS college, syllabus, or upload PDFs...")
 
 if question:
@@ -655,4 +568,4 @@ if question:
             st.session_state.messages.append({"role": "assistant", "content": response})
 
 if not st.session_state.messages:
-    st.info("👋 **Hello!** I'm Campus Bot. Say 'Call me [your name]' to personalize our chat! Ask me about GNITS college, IT syllabus, or upload PDFs. I can have natural conversations too! 😊")
+    st.info("👋 **Hello!** I'm Campus Bot with Gemini AI. Say 'Call me [your name]' to personalize! Ask about GNITS college, IT syllabus, or upload PDFs. I handle spelling mistakes too! 😊")
