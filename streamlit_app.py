@@ -11,7 +11,7 @@ from datetime import datetime
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
-# Initialize Groq Client
+# Initialize Groq Client (Hidden)
 # ============================================
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -236,7 +236,7 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot</h1>
-    <p>Powered by Groq AI | Save Chats | New Conversations</p>
+    <p>Save Chats | New Conversations | Upload PDFs</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -325,14 +325,6 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # AI Status
-    if groq_available:
-        st.success("✅ Groq AI Active")
-    else:
-        st.error("❌ Groq AI Not Available")
-    
-    st.markdown("---")
-    
     # Clear Current Chat Button
     if st.button("🗑️ Clear Current Chat", use_container_width=True):
         st.session_state.messages = []
@@ -397,4 +389,4 @@ if question:
 
 # Welcome message
 if not st.session_state.messages:
-    st.info("👋 **Hello!** I'm Campus Bot powered by Groq AI. I can answer ANY question about GNITS college, or you can upload a PDF and ask questions about its content. Your chats are automatically saved! 😊")
+    st.info("👋 **Hello!** I'm Campus Bot. I can answer any question about GNITS college, or you can upload a PDF and ask questions about its content. Your chats are automatically saved! 😊")
