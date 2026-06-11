@@ -11,19 +11,30 @@ import google.generativeai as genai
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
-# Initialize Gemini AI
+# Initialize Gemini AI (FIXED MODEL)
 # ============================================
 def init_gemini():
     try:
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if api_key:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            # Test the model
-            test_response = model.generate_content("OK")
-            return model, 'gemini-1.5-flash'
+            # Try multiple model names
+            models_to_try = [
+                'gemini-2.0-flash-lite',
+                'gemini-2.0-flash', 
+                'gemini-1.5-flash',
+                'gemini-pro'
+            ]
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    # Quick test
+                    test_response = model.generate_content("OK")
+                    return model, model_name
+                except:
+                    continue
     except Exception as e:
-        st.error(f"Gemini init error: {e}")
+        st.sidebar.error(f"Gemini init error: {e}")
     return None, None
 
 gemini_model, gemini_model_name = init_gemini()
@@ -35,15 +46,15 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "pdf_text" not in st.session_state:
     st.session_state.pdf_text = ""
-if "pdf_full_text" not in st.session_state:
-    st.session_state.pdf_full_text = ""
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
+if "uploaded_file_name" not in st.session_state:
+    st.session_state.uploaded_file_name = ""
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
 
 # ============================================
-# PDF Processing (Extract ALL text)
+# PDF Processing
 # ============================================
 def extract_pdf_text(uploaded_file):
     """Extract ALL text from uploaded PDF"""
@@ -59,14 +70,14 @@ def extract_pdf_text(uploaded_file):
     return text
 
 # ============================================
-# Search PDF for Relevant Content (RAG)
+# Find Relevant Content from PDF
 # ============================================
 def find_relevant_content(question, pdf_text, max_chunks=3):
     """Find most relevant chunks from PDF based on question"""
     if not pdf_text or not question:
         return None
     
-    # Split PDF into chunks (paragraphs/sections)
+    # Split PDF into chunks
     chunks = pdf_text.split('\n\n')
     relevant_chunks = []
     
@@ -74,16 +85,16 @@ def find_relevant_content(question, pdf_text, max_chunks=3):
     question_lower = question.lower()
     keywords = set(re.findall(r'\b\w{4,}\b', question_lower))
     
-    # Score each chunk based on keyword matches
+    # Score each chunk
     chunk_scores = []
     for chunk in chunks:
-        if len(chunk) > 50:  # Ignore very small chunks
+        if len(chunk) > 50:
             chunk_lower = chunk.lower()
             score = sum(1 for keyword in keywords if keyword in chunk_lower)
             if score > 0:
                 chunk_scores.append((score, chunk))
     
-    # Sort by score and get top chunks
+    # Sort and get top chunks
     chunk_scores.sort(reverse=True)
     for score, chunk in chunk_scores[:max_chunks]:
         relevant_chunks.append(chunk)
@@ -91,18 +102,27 @@ def find_relevant_content(question, pdf_text, max_chunks=3):
     return relevant_chunks
 
 # ============================================
-# Get AI Response using RAG
+# Extract Name from Message
+# ============================================
+def extract_name_from_message(message):
+    patterns = [r'call me (\w+)', r'my name is (\w+)', r"i'?m (\w+)", r'i am (\w+)']
+    for pattern in patterns:
+        match = re.search(pattern, message.lower())
+        if match:
+            return match.group(1).capitalize()
+    return None
+
+# ============================================
+# Main Response Function
 # ============================================
 def get_response(question):
     q = question.lower().strip()
     
     # 1. Check for name setting
-    name_match = re.search(r'call me (\w+)|my name is (\w+)|i am (\w+)|i\'m (\w+)', q)
-    if name_match:
-        name = next((g for g in name_match.groups() if g), None)
-        if name:
-            st.session_state.user_name = name.capitalize()
-            return f"Nice to meet you, {st.session_state.user_name}! 👋 I'm Campus Bot. How can I help you today?"
+    name = extract_name_from_message(question)
+    if name:
+        st.session_state.user_name = name
+        return f"Nice to meet you, {name}! 👋 I'm Campus Bot. How can I help you today?"
     
     name_prefix = f"Hey {st.session_state.user_name}, " if st.session_state.user_name else ""
     
@@ -112,21 +132,16 @@ def get_response(question):
         relevant_chunks = find_relevant_content(question, st.session_state.pdf_text)
         
         if relevant_chunks and gemini_model:
-            # Build prompt with relevant PDF content
             context = "\n\n---\n\n".join(relevant_chunks)
             
-            prompt = f"""You are Campus Bot, a helpful assistant. Answer the question based on the provided document content.
+            prompt = f"""You are Campus Bot. Answer based ONLY on this document content.
 
-DOCUMENT CONTENT (from {st.session_state.uploaded_file.name}):
-{context[:8000]}
+DOCUMENT: {st.session_state.uploaded_file_name}
+CONTENT: {context[:6000]}
 
-USER QUESTION: {question}
+QUESTION: {question}
 
-INSTRUCTIONS:
-- Answer based ONLY on the document content above
-- If the answer is not in the document, say "I couldn't find that information in the uploaded document."
-- Be helpful and conversational
-- Use emojis occasionally
+If the answer is not in the document, say "I couldn't find that in the document."
 
 ANSWER:"""
             
@@ -134,35 +149,39 @@ ANSWER:"""
                 response = gemini_model.generate_content(prompt)
                 return response.text
             except Exception as e:
-                return f"Error: {e}"
+                return f"Error generating response: {e}"
     
-    # 3. No PDF uploaded - use general GNITS info
-    # GNITS Data
-    gnits_info = """
-GNITS College Information:
+    # 3. No PDF - GNITS info
+    gnits_info = """🏫 **GNITS College Information:**
 
-ADMISSIONS: UG through TG-EAPCET exam. Contact: 040-29565856
-FEES: B.Tech ₹1,62,000 per year, M.Tech ₹1,12,000 per year
-PLACEMENTS: Highest 50 LPA (Microsoft). Top recruiters: Microsoft, ServiceNow, Deloitte
-FACILITIES: Library 8 AM-8 PM, Hostel, Sports, Canteen
-CONTACTS: Principal 040-29565850, Admissions 040-29565856, Placements 040-29565860
-"""
+📝 **Admissions:** UG through TG-EAPCET exam. Contact: 040-29565856
+💰 **Fees:** B.Tech ₹1,62,000/year, M.Tech ₹1,12,000/year
+🏆 **Placements:** Highest 50 LPA (Microsoft). Recruiters: Microsoft, ServiceNow, Deloitte
+📚 **Facilities:** Library 8 AM-8 PM, Hostel, Sports, Canteen
+📞 **Contacts:** Principal 040-29565850, Admissions 040-29565856, Placements 040-29565860"""
     
-    # Check if question is about GNITS
+    # 4. Check if question is about GNITS
     gnits_keywords = ['gnits', 'college', 'admission', 'fee', 'placement', 'library', 'hostel', 'contact']
     if any(keyword in q for keyword in gnits_keywords):
         return f"{name_prefix}{gnits_info}"
     
-    # 4. Default response
+    # 5. Greetings
+    if re.search(r'^(hi|hello|hey|namaste)', q):
+        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you?"
+    
+    if re.search(r'how are you', q):
+        return f"{name_prefix}I'm doing great! 😊 Thanks for asking!"
+    
+    # 6. Default
     if st.session_state.pdf_text:
-        return f"""{name_prefix}📄 **Document loaded: {st.session_state.uploaded_file.name}**
+        return f"""{name_prefix}📄 **Document loaded: {st.session_state.uploaded_file_name}**
 
-Ask me anything about this document! For example:
+Ask me anything about this document! Examples:
 - "Summarize this document"
 - "What are the main points?"
 - "Tell me about [specific topic]"
 
-Or ask me about GNITS college information! 🎓"""
+Or ask about GNITS college! 🎓"""
     else:
         return f"""{name_prefix}😊 **Welcome!**
 
@@ -239,11 +258,13 @@ with st.sidebar:
             with st.spinner("Processing PDF..."):
                 st.session_state.pdf_text = extract_pdf_text(uploaded_file)
                 st.session_state.uploaded_file = uploaded_file
+                st.session_state.uploaded_file_name = uploaded_file.name
                 st.success("✅ Document processed!")
                 st.rerun()
     
-    if st.session_state.pdf_text:
-        st.info(f"📊 Active: {st.session_state.uploaded_file.name}")
+    # FIXED: Check if uploaded_file exists before accessing .name
+    if st.session_state.uploaded_file:
+        st.info(f"📊 Active: {st.session_state.uploaded_file_name}")
     
     st.markdown("---")
     st.markdown("### 👤 Profile")
@@ -258,7 +279,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🤖 AI Status")
     if gemini_model:
-        st.success("✅ Google Gemini Active")
+        st.success(f"✅ Gemini Active ({gemini_model_name})")
     else:
         st.warning("⚠️ Gemini not available")
         st.info("Add GOOGLE_API_KEY to Secrets")
@@ -293,6 +314,6 @@ if question:
 
 if not st.session_state.messages:
     if st.session_state.pdf_text:
-        st.info(f"📄 **Document loaded: {st.session_state.uploaded_file.name}**\n\nAsk me anything about this document! Example: 'Summarize this document' or 'What are the main points?'")
+        st.info(f"📄 **Document loaded: {st.session_state.uploaded_file_name}**\n\nAsk me anything about this document!")
     else:
-        st.info("👋 **Hello!** Upload any PDF (resume, syllabus, article, report) and ask questions about it! Or ask about GNITS college!")
+        st.info("👋 **Hello!** Upload any PDF and ask questions about it! Or ask about GNITS college!")
