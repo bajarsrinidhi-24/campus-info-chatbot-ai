@@ -1,6 +1,9 @@
 import streamlit as st
 from PyPDF2 import PdfReader
 from groq import Groq
+import json
+import os
+from datetime import datetime
 
 # ============================================
 # Page Configuration
@@ -10,8 +13,50 @@ st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 # ============================================
 # Initialize Groq Client
 # ============================================
-GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "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")
-client = Groq(api_key=GROQ_API_KEY)
+try:
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    client = Groq(api_key=GROQ_API_KEY)
+    groq_available = True
+except:
+    groq_available = False
+
+# ============================================
+# File for saving chat history
+# ============================================
+CHAT_HISTORY_FILE = "chat_history.json"
+
+def load_chat_history():
+    """Load all saved chats from file"""
+    if os.path.exists(CHAT_HISTORY_FILE):
+        try:
+            with open(CHAT_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_chat_history(chat_history):
+    """Save all chats to file"""
+    with open(CHAT_HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(chat_history, f, indent=2, ensure_ascii=False)
+
+def save_current_chat(chat_id, chat_name, messages, pdf_info):
+    """Save current chat to history"""
+    chat_history = load_chat_history()
+    chat_history[chat_id] = {
+        "name": chat_name,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "messages": messages,
+        "pdf_info": pdf_info
+    }
+    save_chat_history(chat_history)
+
+def delete_chat(chat_id):
+    """Delete a specific chat"""
+    chat_history = load_chat_history()
+    if chat_id in chat_history:
+        del chat_history[chat_id]
+        save_chat_history(chat_history)
 
 # ============================================
 # Session State
@@ -26,6 +71,10 @@ if "uploaded_file_name" not in st.session_state:
     st.session_state.uploaded_file_name = ""
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
+if "current_chat_id" not in st.session_state:
+    st.session_state.current_chat_id = None
+if "current_chat_name" not in st.session_state:
+    st.session_state.current_chat_name = "New Chat"
 
 # ============================================
 # PDF Processing
@@ -79,57 +128,39 @@ G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
 - Admissions: 040-29565856
 - Training & Placement Cell: 040-29565860
 - Library: 040-29565870
-
-🏫 ABOUT:
-- Established: 1997
-- Type: Women's Engineering College
-- Location: Hyderabad, Telangana
-- Accreditation: NBA, NAAC 'A' Grade
 """
 
 # ============================================
-# Main Response Function - Groq AI Only
+# Get AI Response
 # ============================================
 def get_response(question):
-    # Build context based on available data
     context = ""
     
-    # Add PDF content if uploaded
     if st.session_state.pdf_text:
         context += f"""
 DOCUMENT CONTENT (from {st.session_state.uploaded_file_name}):
-{st.session_state.pdf_text[:8000]}
+{st.session_state.pdf_text[:6000]}
 
 """
     
-    # Always add GNITS info
     context += f"""
 GNITS COLLEGE INFORMATION:
 {GNITS_INFO}
 
 """
     
-    # Add user's name if set
-    name_context = ""
     if st.session_state.user_name:
-        name_context = f"The user's name is {st.session_state.user_name}. Address them by their name in your response.\n"
+        context += f"The user's name is {st.session_state.user_name}. Address them by name.\n"
     
-    # Create the prompt for Groq
-    prompt = f"""{name_context}You are Campus Bot, a friendly, helpful AI assistant for GNITS college.
-
-{context}
+    prompt = f"""{context}
 
 USER QUESTION: {question}
 
 INSTRUCTIONS:
-1. Answer based on the provided context (PDF document or GNITS information)
-2. If the user asks about something not in the context, use your general knowledge
-3. Be conversational, friendly, and use emojis occasionally 😊
-4. If the user sets a name, use it naturally in conversation
-5. Handle casual chat like "How are you?", "Tell me a joke" naturally
-6. For PDF questions, answer based on the document content
-7. For GNITS questions, answer based on the college information above
-8. Keep answers clear and helpful
+- Answer based on the context (PDF or GNITS info)
+- Be friendly, use emojis
+- For casual chat like "How are you?", respond naturally
+- Keep answers helpful and concise
 
 ANSWER:"""
     
@@ -142,7 +173,7 @@ ANSWER:"""
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Sorry, I encountered an error: {str(e)}"
+        return f"Error: {str(e)}"
 
 # ============================================
 # Custom CSS
@@ -158,7 +189,6 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .main-header h1 { font-size: 2rem; color: white; }
-    .main-header p { color: rgba(255,255,255,0.9); }
     .user-message {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -181,15 +211,21 @@ st.markdown("""
         border: 1px solid #e0e0e0;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border-radius: 25px;
-        border: none;
+    .chat-item {
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 10px;
+        cursor: pointer;
+        background: #f8f9fa;
+        transition: all 0.3s ease;
     }
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+    .chat-item:hover {
+        background: #e9ecef;
+        transform: translateX(5px);
+    }
+    .chat-date {
+        font-size: 10px;
+        color: #6c757d;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -200,17 +236,67 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot</h1>
-    <p>Powered by Groq AI | Upload PDF | Ask Anything</p>
+    <p>Powered by Groq AI | Save Chats | New Conversations</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# Sidebar
+# Sidebar - Chat History
 # ============================================
 with st.sidebar:
-    st.markdown("### 📄 Upload PDF")
+    st.markdown("### 💬 Conversations")
     
-    uploaded_file = st.file_uploader("Choose PDF file", type=['pdf'])
+    # New Chat Button
+    if st.button("➕ New Chat", use_container_width=True):
+        # Save current chat if it has messages
+        if st.session_state.messages:
+            chat_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+            chat_name = f"Chat {datetime.now().strftime('%b %d, %H:%M')}"
+            save_current_chat(
+                chat_id, 
+                chat_name, 
+                st.session_state.messages,
+                {"name": st.session_state.uploaded_file_name, "text": st.session_state.pdf_text[:500] if st.session_state.pdf_text else ""}
+            )
+        # Reset session
+        st.session_state.messages = []
+        st.session_state.pdf_text = ""
+        st.session_state.uploaded_file = None
+        st.session_state.uploaded_file_name = ""
+        st.session_state.current_chat_id = None
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Load and display chat history
+    chat_history = load_chat_history()
+    
+    if chat_history:
+        st.markdown("### 📜 Saved Chats")
+        for chat_id, chat_data in sorted(chat_history.items(), reverse=True):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                if st.button(f"💬 {chat_data['name']}", key=f"chat_{chat_id}", use_container_width=True):
+                    # Load selected chat
+                    st.session_state.messages = chat_data["messages"]
+                    st.session_state.current_chat_id = chat_id
+                    st.session_state.current_chat_name = chat_data["name"]
+                    if chat_data.get("pdf_info", {}).get("name"):
+                        st.session_state.uploaded_file_name = chat_data["pdf_info"]["name"]
+                    st.rerun()
+                st.caption(f"🕐 {chat_data['created_at']}")
+            with col2:
+                if st.button("🗑️", key=f"del_{chat_id}"):
+                    delete_chat(chat_id)
+                    st.rerun()
+    else:
+        st.info("No saved chats yet. Start a conversation!")
+    
+    st.markdown("---")
+    
+    # PDF Upload Section
+    st.markdown("### 📄 Upload PDF")
+    uploaded_file = st.file_uploader("Choose PDF file", type=['pdf'], key="pdf_uploader")
     
     if uploaded_file:
         st.success(f"✅ {uploaded_file.name} selected")
@@ -222,10 +308,12 @@ with st.sidebar:
                 st.success("✅ PDF Ready!")
                 st.rerun()
     
-    if st.session_state.uploaded_file:
-        st.info(f"📄 Active PDF: {st.session_state.uploaded_file_name}")
+    if st.session_state.uploaded_file_name:
+        st.info(f"📄 Active: {st.session_state.uploaded_file_name}")
     
     st.markdown("---")
+    
+    # Profile Section
     st.markdown("### 👤 Profile")
     if st.session_state.user_name:
         st.success(f"Name: {st.session_state.user_name}")
@@ -236,18 +324,27 @@ with st.sidebar:
         st.info("Say 'Call me [name]'")
     
     st.markdown("---")
-    st.markdown("### 🤖 AI Status")
-    st.success("✅ Groq AI Active")
-    st.caption("Model: Llama 3.3 70B")
+    
+    # AI Status
+    if groq_available:
+        st.success("✅ Groq AI Active")
+    else:
+        st.error("❌ Groq AI Not Available")
     
     st.markdown("---")
-    if st.button("🗑️ Clear Chat", use_container_width=True):
+    
+    # Clear Current Chat Button
+    if st.button("🗑️ Clear Current Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
 # ============================================
 # Main Chat Interface
 # ============================================
+# Show current chat name
+if st.session_state.messages:
+    st.caption(f"💬 Current: {st.session_state.current_chat_name if st.session_state.current_chat_name else 'New Chat'}")
+
 st.markdown("### 💬 Chat")
 
 # Display chat history
@@ -283,10 +380,21 @@ if question:
             response = get_response(question)
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
+    
+    # Auto-save current chat after each message
+    if st.session_state.messages:
+        chat_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        chat_name = f"Chat {datetime.now().strftime('%b %d, %H:%M')}"
+        save_current_chat(
+            chat_id, 
+            chat_name, 
+            st.session_state.messages,
+            {"name": st.session_state.uploaded_file_name, "text": st.session_state.pdf_text[:500] if st.session_state.pdf_text else ""}
+        )
+        st.session_state.current_chat_id = chat_id
+        st.session_state.current_chat_name = chat_name
+    st.rerun()
 
 # Welcome message
 if not st.session_state.messages:
-    if st.session_state.uploaded_file:
-        st.info(f"📄 **PDF Loaded: {st.session_state.uploaded_file_name}**\n\nAsk me anything about this document! I can summarize, answer questions, or extract information. Also feel free to ask about GNITS college! 🎓")
-    else:
-        st.info("👋 **Hello!** I'm Campus Bot powered by Groq AI. I can answer ANY question about GNITS college, or you can upload a PDF and ask questions about its content. Just type your question below! 😊")
+    st.info("👋 **Hello!** I'm Campus Bot powered by Groq AI. I can answer ANY question about GNITS college, or you can upload a PDF and ask questions about its content. Your chats are automatically saved! 😊")
