@@ -1,9 +1,6 @@
 import streamlit as st
-import re
-import os
-import tempfile
 from PyPDF2 import PdfReader
-import google.generativeai as genai
+from groq import Groq
 
 # ============================================
 # Page Configuration
@@ -11,32 +8,10 @@ import google.generativeai as genai
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
-# Initialize Gemini AI
+# Initialize Groq Client
 # ============================================
-def init_gemini():
-    try:
-        api_key = st.secrets.get("GOOGLE_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
-            # Try different model names
-            models_to_try = [
-                'gemini-2.0-flash-lite',
-                'gemini-2.0-flash', 
-                'gemini-1.5-flash',
-                'gemini-pro'
-            ]
-            for model_name in models_to_try:
-                try:
-                    model = genai.GenerativeModel(model_name)
-                    test_response = model.generate_content("OK")
-                    return model, model_name
-                except:
-                    continue
-    except Exception as e:
-        st.sidebar.error(f"Gemini init error: {e}")
-    return None, None
-
-gemini_model, gemini_model_name = init_gemini()
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "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")
+client = Groq(api_key=GROQ_API_KEY)
 
 # ============================================
 # Session State
@@ -56,20 +31,19 @@ if "user_name" not in st.session_state:
 # PDF Processing
 # ============================================
 def extract_pdf_text(uploaded_file):
-    """Extract ALL text from uploaded PDF"""
     text = ""
     try:
         pdf_reader = PdfReader(uploaded_file)
-        for page_num, page in enumerate(pdf_reader.pages):
+        for page in pdf_reader.pages:
             page_text = page.extract_text()
             if page_text:
-                text += f"\n--- Page {page_num + 1} ---\n{page_text}\n"
+                text += page_text + "\n"
     except Exception as e:
         st.error(f"Error reading PDF: {e}")
     return text
 
 # ============================================
-# GNITS College Information
+# GNITS Information Database
 # ============================================
 GNITS_INFO = """
 G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
@@ -114,132 +88,61 @@ G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
 """
 
 # ============================================
-# Extract Name from Message
-# ============================================
-def extract_name_from_message(message):
-    patterns = [r'call me (\w+)', r'my name is (\w+)', r"i'?m (\w+)", r'i am (\w+)']
-    for pattern in patterns:
-        match = re.search(pattern, message.lower())
-        if match:
-            return match.group(1).capitalize()
-    return None
-
-# ============================================
-# Main Response Function
+# Main Response Function - Groq AI Only
 # ============================================
 def get_response(question):
-    q = question.lower().strip()
+    # Build context based on available data
+    context = ""
     
-    # 1. Check for name setting
-    name = extract_name_from_message(question)
-    if name:
-        st.session_state.user_name = name
-        return f"Nice to meet you, {name}! 👋 I'm Campus Bot. How can I help you today?"
+    # Add PDF content if uploaded
+    if st.session_state.pdf_text:
+        context += f"""
+DOCUMENT CONTENT (from {st.session_state.uploaded_file_name}):
+{st.session_state.pdf_text[:8000]}
+
+"""
     
-    name_prefix = f"Hey {st.session_state.user_name}, " if st.session_state.user_name else ""
+    # Always add GNITS info
+    context += f"""
+GNITS COLLEGE INFORMATION:
+{GNITS_INFO}
+
+"""
     
-    # 2. Check if Gemini is available
-    if gemini_model:
-        # Build prompt based on available data
-        context = ""
-        
-        # Add PDF content if available
-        if st.session_state.pdf_text:
-            # Take first 5000 chars of PDF for context
-            context += f"DOCUMENT CONTENT (from {st.session_state.uploaded_file_name}):\n{st.session_state.pdf_text[:5000]}\n\n"
-        
-        # Add GNITS info
-        context += f"GNITS COLLEGE INFORMATION:\n{GNITS_INFO}\n\n"
-        
-        prompt = f"""You are Campus Bot, a friendly and helpful assistant.
+    # Add user's name if set
+    name_context = ""
+    if st.session_state.user_name:
+        name_context = f"The user's name is {st.session_state.user_name}. Address them by their name in your response.\n"
+    
+    # Create the prompt for Groq
+    prompt = f"""{name_context}You are Campus Bot, a friendly, helpful AI assistant for GNITS college.
 
 {context}
 
 USER QUESTION: {question}
 
 INSTRUCTIONS:
-- Answer based on the document content if the question is about the uploaded PDF
-- Answer based on GNITS info if the question is about the college
-- For casual questions like "How are you?", respond naturally
-- Be friendly, use emojis, and be conversational
-- If you can't find the answer in the context, say "I couldn't find that information"
+1. Answer based on the provided context (PDF document or GNITS information)
+2. If the user asks about something not in the context, use your general knowledge
+3. Be conversational, friendly, and use emojis occasionally 😊
+4. If the user sets a name, use it naturally in conversation
+5. Handle casual chat like "How are you?", "Tell me a joke" naturally
+6. For PDF questions, answer based on the document content
+7. For GNITS questions, answer based on the college information above
+8. Keep answers clear and helpful
 
 ANSWER:"""
-        
-        try:
-            response = gemini_model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return fallback_response(question, name_prefix)
     
-    # 3. Fallback without Gemini
-    return fallback_response(question, name_prefix)
-
-def fallback_response(question, name_prefix):
-    """Fallback responses when Gemini is not available"""
-    q = question.lower().strip()
-    
-    # Greetings
-    if re.search(r'^(hi|hello|hey|namaste)', q):
-        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you today?"
-    
-    if re.search(r'how are you', q):
-        return f"{name_prefix}I'm doing great! 😊 Thanks for asking!"
-    
-    if re.search(r'thank|thanks', q):
-        return f"{name_prefix}You're very welcome! 😊"
-    
-    if re.search(r'tell me a joke', q):
-        return f"{name_prefix}Why did the student eat their homework? Because the teacher said it was a piece of cake! 😄"
-    
-    # GNITS Questions
-    if re.search(r'fee|fees|cost|tuition', q):
-        return f"{name_prefix}💰 **Fee Structure:**\n\nB.Tech: ₹1,62,000 per year\nM.Tech: ₹1,12,000 per year"
-    
-    if re.search(r'admission|apply|eligibility', q):
-        return f"{name_prefix}📝 **Admissions:**\n\nUG: TG-EAPCET exam required\nPG: Based on GATE score\nContact: 040-29565856"
-    
-    if re.search(r'placement|package|lpa', q):
-        return f"{name_prefix}🏆 **Placements:**\n\nHighest Package: 50 LPA (Microsoft)\nTop Recruiters: Microsoft, ServiceNow, Deloitte"
-    
-    if re.search(r'library|hostel|canteen|sports|facility', q):
-        return f"{name_prefix}📚 **Facilities:**\n\nLibrary: 8 AM - 8 PM\nHostel: Girls hostel with security\nSports and Canteen available"
-    
-    if re.search(r'contact|phone|number', q):
-        return f"{name_prefix}📞 **Contacts:**\n\nAdmissions: 040-29565856\nPrincipal: 040-29565850\nPlacements: 040-29565860"
-    
-    # PDF Questions
-    if st.session_state.pdf_text:
-        # Simple PDF search
-        pdf_lower = st.session_state.pdf_text.lower()
-        words = q.split()
-        for word in words:
-            if len(word) > 3 and word in pdf_lower:
-                # Find relevant line
-                lines = st.session_state.pdf_text.split('\n')
-                for line in lines:
-                    if word in line.lower() and len(line) > 30:
-                        return f"📄 **From your PDF ({st.session_state.uploaded_file_name}):**\n\n{line[:500]}"
-    
-    # Default
-    if st.session_state.pdf_text:
-        return f"""{name_prefix}📄 **I see you uploaded a PDF!**
-
-Ask me questions like:
-- "What is this document about?"
-- "Summarize the key points"
-- "Tell me about [specific topic]"
-
-Or ask about GNITS college! 🎓"""
-    else:
-        return f"""{name_prefix}😊 **Welcome to Campus Bot!**
-
-You can:
-📄 **Upload a PDF** - Ask questions about its content
-🏫 **Ask about GNITS** - Admissions, fees, placements, facilities
-💬 **Chat casually** - "How are you?", "Tell me a joke"
-
-What would you like to know? 🎓"""
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=800
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Sorry, I encountered an error: {str(e)}"
 
 # ============================================
 # Custom CSS
@@ -255,6 +158,7 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     .main-header h1 { font-size: 2rem; color: white; }
+    .main-header p { color: rgba(255,255,255,0.9); }
     .user-message {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -275,12 +179,17 @@ st.markdown("""
         float: left;
         clear: both;
         border: 1px solid #e0e0e0;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     .stButton > button {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border-radius: 25px;
         border: none;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102,126,234,0.4);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -291,7 +200,7 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot</h1>
-    <p>Upload PDFs | Ask Questions | Get Answers</p>
+    <p>Powered by Groq AI | Upload PDF | Ask Anything</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -310,11 +219,11 @@ with st.sidebar:
                 st.session_state.pdf_text = extract_pdf_text(uploaded_file)
                 st.session_state.uploaded_file = uploaded_file
                 st.session_state.uploaded_file_name = uploaded_file.name
-                st.success("✅ Ready!")
+                st.success("✅ PDF Ready!")
                 st.rerun()
     
     if st.session_state.uploaded_file:
-        st.info(f"📄 Active: {st.session_state.uploaded_file_name}")
+        st.info(f"📄 Active PDF: {st.session_state.uploaded_file_name}")
     
     st.markdown("---")
     st.markdown("### 👤 Profile")
@@ -328,10 +237,8 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("### 🤖 AI Status")
-    if gemini_model:
-        st.success(f"✅ Gemini Active")
-    else:
-        st.warning("⚠️ Gemini not available")
+    st.success("✅ Groq AI Active")
+    st.caption("Model: Llama 3.3 70B")
     
     st.markdown("---")
     if st.button("🗑️ Clear Chat", use_container_width=True):
@@ -339,30 +246,47 @@ with st.sidebar:
         st.rerun()
 
 # ============================================
-# Main Chat
+# Main Chat Interface
 # ============================================
 st.markdown("### 💬 Chat")
 
+# Display chat history
 for msg in st.session_state.messages:
     if msg["role"] == "user":
-        st.markdown(f'<div class="user-message"><strong>You</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display: flex; justify-content: flex-end;">
+            <div class="user-message">
+                <strong>You</strong><br>{msg["content"]}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.markdown(f'<div class="bot-message"><strong>🎓 Campus Bot</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="display: flex; justify-content: flex-start;">
+            <div class="bot-message">
+                <strong>🎓 Campus Bot</strong><br>{msg["content"]}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-question = st.chat_input("Ask about your PDF, GNITS college, or just chat...")
+# Chat input
+question = st.chat_input("Ask me anything about GNITS college or your uploaded PDF...")
 
 if question:
     st.session_state.messages.append({"role": "user", "content": question})
+    
     with st.chat_message("user"):
         st.markdown(question)
+    
     with st.chat_message("assistant"):
         with st.spinner("🤔 Thinking..."):
             response = get_response(question)
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
+# Welcome message
 if not st.session_state.messages:
-    if st.session_state.pdf_text:
-        st.info(f"📄 **Ready!** Ask me anything about {st.session_state.uploaded_file_name}")
+    if st.session_state.uploaded_file:
+        st.info(f"📄 **PDF Loaded: {st.session_state.uploaded_file_name}**\n\nAsk me anything about this document! I can summarize, answer questions, or extract information. Also feel free to ask about GNITS college! 🎓")
     else:
-        st.info("👋 **Hello!** Upload a PDF, ask about GNITS college, or just chat with me!")
+        st.info("👋 **Hello!** I'm Campus Bot powered by Groq AI. I can answer ANY question about GNITS college, or you can upload a PDF and ask questions about its content. Just type your question below! 😊")
