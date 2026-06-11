@@ -5,9 +5,49 @@ import tempfile
 from PyPDF2 import PdfReader
 
 # ============================================
+# Try to import AI libraries (optional)
+# ============================================
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except:
+    OPENAI_AVAILABLE = False
+
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except:
+    GEMINI_AVAILABLE = False
+
+# ============================================
 # Page Configuration
 # ============================================
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
+
+# ============================================
+# Initialize AI Client (if API key available)
+# ============================================
+def init_ai_client():
+    """Initialize OpenAI or Gemini client from secrets"""
+    
+    # Try OpenAI first
+    try:
+        openai.api_key = st.secrets.get("OPENAI_API_KEY")
+        if openai.api_key:
+            return "openai", openai
+    except:
+        pass
+    
+    # Try Gemini
+    try:
+        genai.configure(api_key=st.secrets.get("GOOGLE_API_KEY"))
+        return "gemini", genai
+    except:
+        pass
+    
+    return None, None
+
+AI_TYPE, AI_CLIENT = init_ai_client()
 
 # ============================================
 # Session State Initialization
@@ -274,12 +314,55 @@ Percentage = (CGPA - 0.5) × 10""",
 }
 
 # ============================================
-# Main Response Function
+# AI-Powered Response (if available)
+# ============================================
+def get_ai_response(question, context):
+    """Get response from AI (OpenAI or Gemini)"""
+    
+    prompt = f"""You are Campus Bot, a helpful assistant for GNITS college.
+    
+    Context from GNITS data and PDFs:
+    {context}
+    
+    User question: {question}
+    
+    Rules:
+    - Be friendly and conversational
+    - Use emojis occasionally
+    - If you know the user's name (from conversation), use it
+    - Answer based on the context when possible
+    - For casual questions, respond naturally
+    
+    Answer:"""
+    
+    try:
+        if AI_TYPE == "openai":
+            response = AI_CLIENT.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are Campus Bot, a helpful assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500
+            )
+            return response.choices[0].message.content
+        elif AI_TYPE == "gemini":
+            model = AI_CLIENT.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
+            return response.text
+    except Exception as e:
+        return None
+    
+    return None
+
+# ============================================
+# Main Response Function (Hybrid: AI + Rule-based)
 # ============================================
 def get_response(question):
     q = question.lower().strip()
     
-    # 1. Check for name setting
+    # 1. Check for name setting (always rule-based for reliability)
     extracted_name = extract_name_from_message(question)
     if extracted_name:
         st.session_state.user_name = extracted_name
@@ -288,30 +371,34 @@ def get_response(question):
     # 2. Get user's name for personalized responses
     name_prefix = f"Hey {st.session_state.user_name}, " if st.session_state.user_name else ""
     
-    # 3. Casual conversations
-    if re.search(r'^(hi|hello|hey|namaste|good morning|good afternoon|good evening)', q):
-        responses = [
-            f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you today?",
-            f"{name_prefix}Hi there! 😊 What can I help you with?",
-            f"{name_prefix}Hey! Welcome back! 🎓 Ask me anything about GNITS!"
-        ]
-        return responses[0]
+    # 3. Build context from all sources
+    context = GNITS_DATA
+    if st.session_state.pdf_text:
+        context += f"\n\nPDF CONTENT:\n{st.session_state.pdf_text[:5000]}"
     
-    if re.search(r'how are you|how\'s it going|what\'s up', q):
+    # 4. Try AI first if available (for better conversations)
+    if AI_TYPE:
+        try:
+            ai_response = get_ai_response(question, context)
+            if ai_response:
+                return ai_response
+        except:
+            pass  # Fall back to rule-based
+    
+    # 5. Rule-based fallback responses (works without AI)
+    
+    # Casual conversations
+    if re.search(r'^(hi|hello|hey|namaste|good morning|good afternoon|good evening)', q):
+        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you today?"
+    
+    if re.search(r'how are you|how\'s it going', q):
         return f"{name_prefix}I'm doing great! 😊 Thanks for asking! Ready to help you with GNITS info. How can I assist you?"
     
-    if re.search(r'how old are you|your age', q):
-        return f"I'm a digital assistant! 🎓 I was created in 2024 to help GNITS students. So I'm about 2 years young!"
-    
-    if re.search(r'what is your name|who are you', q):
-        return f"I'm Campus Bot! 🎓 Your friendly AI assistant for GNITS college. I can help with admissions, fees, placements, syllabus, and more!"
-    
-    if re.search(r'tell me a joke|make me laugh|funny', q):
+    if re.search(r'tell me a joke|make me laugh', q):
         jokes = [
             "Why did the student eat their homework? Because the teacher said it was a piece of cake! 😄",
             "What do you call a computer that sings? A Dell-ophone! 🎵",
-            "Why did the programmer quit his job? Because he didn't get arrays! 😂",
-            "What's a computer's favorite beat? An algorithm! 🥁"
+            "Why did the programmer quit his job? Because he didn't get arrays! 😂"
         ]
         import random
         return f"{name_prefix}{random.choice(jokes)}"
@@ -319,84 +406,59 @@ def get_response(question):
     if re.search(r'thank|thanks|appreciate', q):
         return f"{name_prefix}You're very welcome! 😊 I'm always here to help with anything about GNITS. Feel free to ask anytime!"
     
-    if re.search(r'i love|you are awesome|great bot', q):
-        return f"{name_prefix}Aww, thank you! 😊 That made my day! I'm here whenever you need help with GNITS."
+    if re.search(r'stressed|worried|nervous', q):
+        return f"{name_prefix}Don't worry! 😊 GNITS has great support systems. Take a deep breath, make a plan, and remember you've got this! 💪"
     
-    if re.search(r'stressed|worried|nervous|anxious', q):
-        return f"{name_prefix}Don't worry! 😊 GNITS has great support systems. Take a deep breath, make a plan, and remember you've got this! 💪 I'm here to help with any info you need."
+    if re.search(r'favorite thing about gnits', q):
+        return f"{name_prefix}I love GNITS's strong placement record (50 LPA from Microsoft! 🏆) and the amazing clubs like Coding Club and Robotics Club! 🎓"
     
-    if re.search(r'favorite thing about gnits|what do you like', q):
-        return f"{name_prefix}I love GNITS's strong placement record (50 LPA from Microsoft! 🏆) and the amazing clubs like Coding Club and Robotics Club! So many opportunities for students! 🎓"
-    
-    if re.search(r'good morning|good afternoon|good evening', q):
-        return f"{name_prefix}Good {re.search(r'good (morning|afternoon|evening)', q).group(1)} to you too! 🌞 How can I help you with GNITS today?"
-    
-    # 4. Check PDF content first (if uploaded)
+    # PDF content search
     if st.session_state.pdf_text and len(q) > 5:
-        # Search in PDF content
-        pdf_lower = st.session_state.pdf_text.lower()
-        if any(keyword in pdf_lower for keyword in q.split()[:3]):
-            # Find relevant section from PDF
-            lines = st.session_state.pdf_text.split('\n')
-            for line in lines:
-                if any(keyword in line.lower() for keyword in q.split()[:3]):
-                    if len(line) > 50:
-                        return f"📄 **From your uploaded PDF:**\n\n{line[:500]}"
+        lines = st.session_state.pdf_text.split('\n')
+        for line in lines:
+            if any(keyword in line.lower() for keyword in q.split()[:3]):
+                if len(line) > 50:
+                    return f"📄 **From your uploaded PDF:**\n\n{line[:500]}"
     
-    # 5. IT Syllabus queries
-    if re.search(r'i year|1st year|first year|semester 1|semester i|i-i', q):
+    # IT Syllabus queries
+    if re.search(r'i year|1st year|first year|semester 1', q):
         return IT_SYLLABUS["i_year_i_sem"]
-    if re.search(r'i year ii|1st year 2nd|i-ii|second semester first year', q):
+    if re.search(r'i year ii|1st year 2nd|i-ii', q):
         return IT_SYLLABUS["i_year_ii_sem"]
-    if re.search(r'ii year|2nd year|second year|ii-i|ii year i', q):
+    if re.search(r'ii year|2nd year|second year|ii-i', q):
         return IT_SYLLABUS["ii_year_i_sem"]
     if re.search(r'ii year ii|2nd year 2nd|ii-ii', q):
         return IT_SYLLABUS["ii_year_ii_sem"]
-    if re.search(r'iii year|3rd year|third year|iii-i', q):
+    if re.search(r'iii year|3rd year|third year', q):
         return IT_SYLLABUS["iii_year_i_sem"]
-    if re.search(r'iii year ii|3rd year 2nd|iii-ii', q):
-        return IT_SYLLABUS["iii_year_ii_sem"]
-    if re.search(r'iv year|4th year|fourth year|final year|iv-i', q):
+    if re.search(r'iv year|4th year|fourth year|final year', q):
         return IT_SYLLABUS["iv_year_i_sem"]
-    if re.search(r'iv year ii|4th year 2nd|final semester|iv-ii', q):
-        return IT_SYLLABUS["iv_year_ii_sem"]
     
-    # 6. Academic rules
-    if re.search(r'attendance|absent|condonation|75%', q):
+    # Academic rules
+    if re.search(r'attendance|condonation|75%', q):
         return IT_SYLLABUS["attendance"]
-    if re.search(r'grade|grading|gpa|sgpa|cgpa|percentage|class', q):
+    if re.search(r'grade|grading|gpa|sgpa|cgpa', q):
         return IT_SYLLABUS["grading"] + "\n\n" + IT_SYLLABUS["sgpa_cgpa"]
-    if re.search(r'exam|mid|see|cie|evaluation|marks|passing|pattern', q):
+    if re.search(r'exam|mid|see|cie|evaluation|pattern', q):
         return IT_SYLLABUS["exam_pattern"]
-    if re.search(r'professional elective|pe1|pe2|pe3|pe4|pe5|pe6', q):
+    if re.search(r'professional elective|pe', q):
         return IT_SYLLABUS["pe_electives"]
-    if re.search(r'open elective|oe', q):
-        return IT_SYLLABUS["open_electives"]
     
-    # 7. GNITS College queries
-    if re.search(r'fee|fees|cost|price|tuition', q):
-        section = GNITS_DATA.split("💰 FEE STRUCTURE:")[1].split("🏆 PLACEMENTS:")[0]
-        return f"{name_prefix}{section}"
-    if re.search(r'admission|apply|eligibility|how to get|join|counseling', q):
-        section = GNITS_DATA.split("📝 ADMISSIONS:")[1].split("💰 FEE STRUCTURE:")[0]
-        return f"{name_prefix}{section}"
-    if re.search(r'placement|package|recruiter|company|job|salary|lpa', q):
-        section = GNITS_DATA.split("🏆 PLACEMENTS:")[1].split("📚 FACILITIES:")[0]
-        return f"{name_prefix}{section}"
-    if re.search(r'library|hostel|canteen|sports|facility|lab', q):
-        section = GNITS_DATA.split("📚 FACILITIES:")[1].split("🎉 CLUBS & EVENTS:")[0]
-        return f"{name_prefix}{section}"
-    if re.search(r'club|event|fest|hackathon|splash|coding|robotics', q):
-        section = GNITS_DATA.split("🎉 CLUBS & EVENTS:")[1].split("📞 IMPORTANT CONTACTS:")[0]
-        return f"{name_prefix}{section}"
-    if re.search(r'contact|phone|number|email|call|reach', q):
-        section = GNITS_DATA.split("📞 IMPORTANT CONTACTS:")[1].split("🏫 ABOUT:")[0]
-        return f"{name_prefix}{section}"
-    if re.search(r'about|what is gnits|college info', q):
-        section = GNITS_DATA.split("🏫 ABOUT:")[1]
-        return f"{name_prefix}{section}"
+    # GNITS queries
+    if re.search(r'fee|fees|cost|tuition', q):
+        return f"{name_prefix}{GNITS_DATA.split('💰 FEE STRUCTURE:')[1].split('🏆 PLACEMENTS:')[0]}"
+    if re.search(r'admission|apply|eligibility', q):
+        return f"{name_prefix}{GNITS_DATA.split('📝 ADMISSIONS:')[1].split('💰 FEE STRUCTURE:')[0]}"
+    if re.search(r'placement|package|recruiter|lpa', q):
+        return f"{name_prefix}{GNITS_DATA.split('🏆 PLACEMENTS:')[1].split('📚 FACILITIES:')[0]}"
+    if re.search(r'library|hostel|canteen|sports|facility', q):
+        return f"{name_prefix}{GNITS_DATA.split('📚 FACILITIES:')[1].split('🎉 CLUBS & EVENTS:')[0]}"
+    if re.search(r'club|event|hackathon|coding|robotics', q):
+        return f"{name_prefix}{GNITS_DATA.split('🎉 CLUBS & EVENTS:')[1].split('📞 IMPORTANT CONTACTS:')[0]}"
+    if re.search(r'contact|phone|number', q):
+        return f"{name_prefix}{GNITS_DATA.split('📞 IMPORTANT CONTACTS:')[1].split('🏫 ABOUT:')[0]}"
     
-    # 8. Default response
+    # Default
     return f"""{name_prefix}😊 **I'm here to help!**
 
 You can ask me about:
@@ -410,7 +472,7 @@ You can ask me about:
 📖 **IT Syllabus** (I to IV Year)
 📊 **Attendance & Grading Rules**
 
-Also, you can say "Call me [your name]" to personalize our chat!
+**Also:** Say "Call me [your name]" to personalize our chat!
 
 **What would you like to know?** 🎓"""
 
@@ -514,14 +576,15 @@ with st.sidebar:
         st.info("Say 'Call me [name]' to set your name")
     
     st.markdown("---")
-    st.markdown("### ℹ️ Data Sources")
-    st.info("""
-    ✅ **GNITS Website** (Always available)
-    ✅ **IT Syllabus (R25)** (I to IV Year)
-    ✅ **Uploaded PDFs** (Your documents)
-    """)
+    st.markdown("### 🤖 AI Status")
+    if AI_TYPE == "openai":
+        st.success("✅ OpenAI Connected")
+    elif AI_TYPE == "gemini":
+        st.success("✅ Google Gemini Connected")
+    else:
+        st.warning("⚠️ No AI API key found. Using rule-based mode.")
+        st.info("Add OPENAI_API_KEY or GOOGLE_API_KEY to Secrets")
     
-    # Quick Resource Buttons
     st.markdown("---")
     st.markdown("### 📚 Quick Resources")
     
@@ -544,15 +607,16 @@ with st.sidebar:
 # Main Chat Interface
 # ============================================
 # Status indicators
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     st.success("✅ GNITS College Data")
-    st.success("✅ IT Syllabus (R25)")
 with col2:
+    st.success("✅ IT Syllabus (R25)")
+with col3:
     if st.session_state.pdf_text:
-        st.success(f"✅ PDFs Loaded: {len(st.session_state.uploaded_files)}")
+        st.success(f"✅ PDFs: {len(st.session_state.uploaded_files)}")
     else:
-        st.info("📄 Upload PDFs to ask questions from them")
+        st.info("📄 Upload PDFs")
 
 st.markdown("### 💬 Chat with Campus Bot")
 
@@ -591,4 +655,4 @@ if question:
             st.session_state.messages.append({"role": "assistant", "content": response})
 
 if not st.session_state.messages:
-    st.info("👋 **Hello!** I'm Campus Bot. Say 'Call me [your name]' to personalize our chat! Ask me about GNITS college, IT syllabus, or upload PDFs to ask questions from them. 😊")
+    st.info("👋 **Hello!** I'm Campus Bot. Say 'Call me [your name]' to personalize our chat! Ask me about GNITS college, IT syllabus, or upload PDFs. I can have natural conversations too! 😊")
