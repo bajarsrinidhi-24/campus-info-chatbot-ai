@@ -11,7 +11,7 @@ from datetime import datetime
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
-# Initialize Groq Client (Hidden)
+# Initialize Groq Client
 # ============================================
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -21,12 +21,15 @@ except:
     groq_available = False
 
 # ============================================
-# File for saving chat history
+# File paths for saving data
 # ============================================
 CHAT_HISTORY_FILE = "chat_history.json"
+PDF_HISTORY_FILE = "pdf_history.json"
 
+# ============================================
+# Chat History Functions
+# ============================================
 def load_chat_history():
-    """Load all saved chats from file"""
     if os.path.exists(CHAT_HISTORY_FILE):
         try:
             with open(CHAT_HISTORY_FILE, 'r', encoding='utf-8') as f:
@@ -36,12 +39,10 @@ def load_chat_history():
     return {}
 
 def save_chat_history(chat_history):
-    """Save all chats to file"""
     with open(CHAT_HISTORY_FILE, 'w', encoding='utf-8') as f:
         json.dump(chat_history, f, indent=2, ensure_ascii=False)
 
 def save_current_chat(chat_id, chat_name, messages, pdf_info):
-    """Save current chat to history"""
     chat_history = load_chat_history()
     chat_history[chat_id] = {
         "name": chat_name,
@@ -52,11 +53,41 @@ def save_current_chat(chat_id, chat_name, messages, pdf_info):
     save_chat_history(chat_history)
 
 def delete_chat(chat_id):
-    """Delete a specific chat"""
     chat_history = load_chat_history()
     if chat_id in chat_history:
         del chat_history[chat_id]
         save_chat_history(chat_history)
+
+# ============================================
+# PDF History Functions
+# ============================================
+def load_pdf_history():
+    if os.path.exists(PDF_HISTORY_FILE):
+        try:
+            with open(PDF_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_pdf_history(pdf_history):
+    with open(PDF_HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(pdf_history, f, indent=2, ensure_ascii=False)
+
+def save_pdf(pdf_id, pdf_name, pdf_text):
+    pdf_history = load_pdf_history()
+    pdf_history[pdf_id] = {
+        "name": pdf_name,
+        "text": pdf_text[:50000],  # Save first 50000 chars
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    save_pdf_history(pdf_history)
+
+def delete_pdf(pdf_id):
+    pdf_history = load_pdf_history()
+    if pdf_id in pdf_history:
+        del pdf_history[pdf_id]
+        save_pdf_history(pdf_history)
 
 # ============================================
 # Session State
@@ -69,6 +100,8 @@ if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
 if "uploaded_file_name" not in st.session_state:
     st.session_state.uploaded_file_name = ""
+if "current_pdf_id" not in st.session_state:
+    st.session_state.current_pdf_id = None
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
 if "current_chat_id" not in st.session_state:
@@ -211,19 +244,19 @@ st.markdown("""
         border: 1px solid #e0e0e0;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
-    .chat-item {
-        padding: 10px;
+    .saved-item {
+        padding: 8px;
         margin: 5px 0;
-        border-radius: 10px;
+        border-radius: 8px;
         cursor: pointer;
         background: #f8f9fa;
         transition: all 0.3s ease;
     }
-    .chat-item:hover {
+    .saved-item:hover {
         background: #e9ecef;
         transform: translateX(5px);
     }
-    .chat-date {
+    .saved-date {
         font-size: 10px;
         color: #6c757d;
     }
@@ -236,33 +269,26 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot</h1>
-    <p>Save Chats | New Conversations | Upload PDFs</p>
+    <p>Save Chats | Save PDFs | New Conversations</p>
 </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# Sidebar - Chat History
+# Sidebar
 # ============================================
 with st.sidebar:
     st.markdown("### 💬 Conversations")
     
     # New Chat Button
     if st.button("➕ New Chat", use_container_width=True):
-        # Save current chat if it has messages
         if st.session_state.messages:
             chat_id = datetime.now().strftime("%Y%m%d_%H%M%S")
             chat_name = f"Chat {datetime.now().strftime('%b %d, %H:%M')}"
             save_current_chat(
-                chat_id, 
-                chat_name, 
-                st.session_state.messages,
-                {"name": st.session_state.uploaded_file_name, "text": st.session_state.pdf_text[:500] if st.session_state.pdf_text else ""}
+                chat_id, chat_name, st.session_state.messages,
+                {"name": st.session_state.uploaded_file_name, "id": st.session_state.current_pdf_id}
             )
-        # Reset session
         st.session_state.messages = []
-        st.session_state.pdf_text = ""
-        st.session_state.uploaded_file = None
-        st.session_state.uploaded_file_name = ""
         st.session_state.current_chat_id = None
         st.rerun()
     
@@ -270,46 +296,89 @@ with st.sidebar:
     
     # Load and display chat history
     chat_history = load_chat_history()
-    
     if chat_history:
         st.markdown("### 📜 Saved Chats")
         for chat_id, chat_data in sorted(chat_history.items(), reverse=True):
             col1, col2 = st.columns([4, 1])
             with col1:
                 if st.button(f"💬 {chat_data['name']}", key=f"chat_{chat_id}", use_container_width=True):
-                    # Load selected chat
                     st.session_state.messages = chat_data["messages"]
                     st.session_state.current_chat_id = chat_id
                     st.session_state.current_chat_name = chat_data["name"]
-                    if chat_data.get("pdf_info", {}).get("name"):
-                        st.session_state.uploaded_file_name = chat_data["pdf_info"]["name"]
+                    if chat_data.get("pdf_info", {}).get("id"):
+                        pdf_history = load_pdf_history()
+                        pdf_id = chat_data["pdf_info"]["id"]
+                        if pdf_id in pdf_history:
+                            st.session_state.pdf_text = pdf_history[pdf_id]["text"]
+                            st.session_state.uploaded_file_name = pdf_history[pdf_id]["name"]
+                            st.session_state.current_pdf_id = pdf_id
                     st.rerun()
                 st.caption(f"🕐 {chat_data['created_at']}")
             with col2:
                 if st.button("🗑️", key=f"del_{chat_id}"):
                     delete_chat(chat_id)
                     st.rerun()
-    else:
-        st.info("No saved chats yet. Start a conversation!")
     
     st.markdown("---")
+    st.markdown("### 📄 Saved PDFs")
     
     # PDF Upload Section
-    st.markdown("### 📄 Upload PDF")
-    uploaded_file = st.file_uploader("Choose PDF file", type=['pdf'], key="pdf_uploader")
+    uploaded_file = st.file_uploader("Upload new PDF", type=['pdf'], key="pdf_uploader")
     
     if uploaded_file:
         st.success(f"✅ {uploaded_file.name} selected")
-        if st.button("🚀 Process PDF", use_container_width=True):
-            with st.spinner("Processing PDF..."):
-                st.session_state.pdf_text = extract_pdf_text(uploaded_file)
-                st.session_state.uploaded_file = uploaded_file
-                st.session_state.uploaded_file_name = uploaded_file.name
-                st.success("✅ PDF Ready!")
-                st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📂 Process Only", use_container_width=True):
+                with st.spinner("Processing PDF..."):
+                    st.session_state.pdf_text = extract_pdf_text(uploaded_file)
+                    st.session_state.uploaded_file = uploaded_file
+                    st.session_state.uploaded_file_name = uploaded_file.name
+                    st.session_state.current_pdf_id = None
+                    st.success("✅ PDF Ready! (Not saved)")
+                    st.rerun()
+        with col2:
+            if st.button("💾 Process & Save", use_container_width=True):
+                with st.spinner("Processing and saving PDF..."):
+                    pdf_text = extract_pdf_text(uploaded_file)
+                    pdf_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    save_pdf(pdf_id, uploaded_file.name, pdf_text)
+                    st.session_state.pdf_text = pdf_text
+                    st.session_state.uploaded_file_name = uploaded_file.name
+                    st.session_state.current_pdf_id = pdf_id
+                    st.success("✅ PDF Saved! You can load it anytime.")
+                    st.rerun()
     
+    st.markdown("---")
+    
+    # Display saved PDFs
+    pdf_history = load_pdf_history()
+    if pdf_history:
+        for pdf_id, pdf_data in sorted(pdf_history.items(), reverse=True):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                if st.button(f"📄 {pdf_data['name'][:30]}", key=f"pdf_{pdf_id}", use_container_width=True):
+                    st.session_state.pdf_text = pdf_data["text"]
+                    st.session_state.uploaded_file_name = pdf_data["name"]
+                    st.session_state.current_pdf_id = pdf_id
+                    st.success(f"✅ Loaded: {pdf_data['name']}")
+                    st.rerun()
+                st.caption(f"🕐 {pdf_data['created_at']}")
+            with col2:
+                if st.button("🗑️", key=f"del_pdf_{pdf_id}"):
+                    delete_pdf(pdf_id)
+                    st.rerun()
+    else:
+        st.info("No saved PDFs. Upload and click 'Process & Save'")
+    
+    st.markdown("---")
+    
+    # Active PDF indicator
     if st.session_state.uploaded_file_name:
-        st.info(f"📄 Active: {st.session_state.uploaded_file_name}")
+        if st.session_state.current_pdf_id:
+            st.success(f"📄 Active: {st.session_state.uploaded_file_name} (Saved)")
+        else:
+            st.info(f"📄 Active: {st.session_state.uploaded_file_name} (Not saved)")
     
     st.markdown("---")
     
@@ -333,13 +402,11 @@ with st.sidebar:
 # ============================================
 # Main Chat Interface
 # ============================================
-# Show current chat name
 if st.session_state.messages:
     st.caption(f"💬 Current: {st.session_state.current_chat_name if st.session_state.current_chat_name else 'New Chat'}")
 
 st.markdown("### 💬 Chat")
 
-# Display chat history
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"""
@@ -358,7 +425,6 @@ for msg in st.session_state.messages:
         </div>
         """, unsafe_allow_html=True)
 
-# Chat input
 question = st.chat_input("Ask me anything about GNITS college or your uploaded PDF...")
 
 if question:
@@ -373,20 +439,16 @@ if question:
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
     
-    # Auto-save current chat after each message
     if st.session_state.messages:
         chat_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         chat_name = f"Chat {datetime.now().strftime('%b %d, %H:%M')}"
         save_current_chat(
-            chat_id, 
-            chat_name, 
-            st.session_state.messages,
-            {"name": st.session_state.uploaded_file_name, "text": st.session_state.pdf_text[:500] if st.session_state.pdf_text else ""}
+            chat_id, chat_name, st.session_state.messages,
+            {"name": st.session_state.uploaded_file_name, "id": st.session_state.current_pdf_id}
         )
         st.session_state.current_chat_id = chat_id
         st.session_state.current_chat_name = chat_name
     st.rerun()
 
-# Welcome message
 if not st.session_state.messages:
-    st.info("👋 **Hello!** I'm Campus Bot. I can answer any question about GNITS college, or you can upload a PDF and ask questions about its content. Your chats are automatically saved! 😊")
+    st.info("👋 **Hello!** I'm Campus Bot. Upload a PDF (save it with 'Process & Save'), ask about GNITS college, or just chat! Your PDFs and chats are saved and can be loaded anytime! 😊")
