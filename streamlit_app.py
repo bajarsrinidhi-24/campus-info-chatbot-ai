@@ -11,14 +11,14 @@ import google.generativeai as genai
 st.set_page_config(page_title="Campus Chatbot", page_icon="🎓", layout="wide")
 
 # ============================================
-# Initialize Gemini AI (FIXED MODEL)
+# Initialize Gemini AI
 # ============================================
 def init_gemini():
     try:
         api_key = st.secrets.get("GOOGLE_API_KEY")
         if api_key:
             genai.configure(api_key=api_key)
-            # Try multiple model names
+            # Try different model names
             models_to_try = [
                 'gemini-2.0-flash-lite',
                 'gemini-2.0-flash', 
@@ -28,7 +28,6 @@ def init_gemini():
             for model_name in models_to_try:
                 try:
                     model = genai.GenerativeModel(model_name)
-                    # Quick test
                     test_response = model.generate_content("OK")
                     return model, model_name
                 except:
@@ -70,36 +69,49 @@ def extract_pdf_text(uploaded_file):
     return text
 
 # ============================================
-# Find Relevant Content from PDF
+# GNITS College Information
 # ============================================
-def find_relevant_content(question, pdf_text, max_chunks=3):
-    """Find most relevant chunks from PDF based on question"""
-    if not pdf_text or not question:
-        return None
-    
-    # Split PDF into chunks
-    chunks = pdf_text.split('\n\n')
-    relevant_chunks = []
-    
-    # Extract keywords from question
-    question_lower = question.lower()
-    keywords = set(re.findall(r'\b\w{4,}\b', question_lower))
-    
-    # Score each chunk
-    chunk_scores = []
-    for chunk in chunks:
-        if len(chunk) > 50:
-            chunk_lower = chunk.lower()
-            score = sum(1 for keyword in keywords if keyword in chunk_lower)
-            if score > 0:
-                chunk_scores.append((score, chunk))
-    
-    # Sort and get top chunks
-    chunk_scores.sort(reverse=True)
-    for score, chunk in chunk_scores[:max_chunks]:
-        relevant_chunks.append(chunk)
-    
-    return relevant_chunks
+GNITS_INFO = """
+G. Narayanamma Institute of Technology and Sciences (GNITS), Hyderabad
+
+📝 ADMISSIONS:
+- UG: TG-EAPCET exam required. Eligibility: 10+2 with Physics, Chemistry, Mathematics
+- PG: Based on GATE score or TS-PGECET
+- Contact Admissions: 040-29565856
+
+💰 FEE STRUCTURE:
+- B.Tech: ₹1,62,000 per year + JNTUH fees
+- M.Tech: ₹1,12,000 per year
+- NRI Category: USD 5,000 + JNTUH fees per year
+
+🏆 PLACEMENTS:
+- Highest Package: 50 LPA (Microsoft)
+- Second Highest: 42.6 LPA (ServiceNow)
+- Top Recruiters: Microsoft, ServiceNow, Deloitte, Snowflake, PwC
+
+📚 FACILITIES:
+- Library: 8 AM to 8 PM (Monday-Saturday)
+- Hostel: Girls hostel with 24/7 security
+- Sports: Indoor badminton, table tennis, volleyball, basketball
+- Canteen: Available
+
+🎉 CLUBS & EVENTS:
+- Coding Club, Robotics Club, Entrepreneurship Cell
+- Cultural Committee, Technical Club
+- IEEE ICoECIT-2026, Splash Fest, Hackathon
+
+📞 IMPORTANT CONTACTS:
+- Principal Office: 040-29565850
+- Admissions: 040-29565856
+- Training & Placement Cell: 040-29565860
+- Library: 040-29565870
+
+🏫 ABOUT:
+- Established: 1997
+- Type: Women's Engineering College
+- Location: Hyderabad, Telangana
+- Accreditation: NBA, NAAC 'A' Grade
+"""
 
 # ============================================
 # Extract Name from Message
@@ -126,67 +138,106 @@ def get_response(question):
     
     name_prefix = f"Hey {st.session_state.user_name}, " if st.session_state.user_name else ""
     
-    # 2. Check if there's an uploaded PDF
-    if st.session_state.pdf_text and st.session_state.uploaded_file:
-        # Find relevant content from PDF
-        relevant_chunks = find_relevant_content(question, st.session_state.pdf_text)
+    # 2. Check if Gemini is available
+    if gemini_model:
+        # Build prompt based on available data
+        context = ""
         
-        if relevant_chunks and gemini_model:
-            context = "\n\n---\n\n".join(relevant_chunks)
-            
-            prompt = f"""You are Campus Bot. Answer based ONLY on this document content.
+        # Add PDF content if available
+        if st.session_state.pdf_text:
+            # Take first 5000 chars of PDF for context
+            context += f"DOCUMENT CONTENT (from {st.session_state.uploaded_file_name}):\n{st.session_state.pdf_text[:5000]}\n\n"
+        
+        # Add GNITS info
+        context += f"GNITS COLLEGE INFORMATION:\n{GNITS_INFO}\n\n"
+        
+        prompt = f"""You are Campus Bot, a friendly and helpful assistant.
 
-DOCUMENT: {st.session_state.uploaded_file_name}
-CONTENT: {context[:6000]}
+{context}
 
-QUESTION: {question}
+USER QUESTION: {question}
 
-If the answer is not in the document, say "I couldn't find that in the document."
+INSTRUCTIONS:
+- Answer based on the document content if the question is about the uploaded PDF
+- Answer based on GNITS info if the question is about the college
+- For casual questions like "How are you?", respond naturally
+- Be friendly, use emojis, and be conversational
+- If you can't find the answer in the context, say "I couldn't find that information"
 
 ANSWER:"""
-            
-            try:
-                response = gemini_model.generate_content(prompt)
-                return response.text
-            except Exception as e:
-                return f"Error generating response: {e}"
+        
+        try:
+            response = gemini_model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return fallback_response(question, name_prefix)
     
-    # 3. No PDF - GNITS info
-    gnits_info = """🏫 **GNITS College Information:**
+    # 3. Fallback without Gemini
+    return fallback_response(question, name_prefix)
 
-📝 **Admissions:** UG through TG-EAPCET exam. Contact: 040-29565856
-💰 **Fees:** B.Tech ₹1,62,000/year, M.Tech ₹1,12,000/year
-🏆 **Placements:** Highest 50 LPA (Microsoft). Recruiters: Microsoft, ServiceNow, Deloitte
-📚 **Facilities:** Library 8 AM-8 PM, Hostel, Sports, Canteen
-📞 **Contacts:** Principal 040-29565850, Admissions 040-29565856, Placements 040-29565860"""
+def fallback_response(question, name_prefix):
+    """Fallback responses when Gemini is not available"""
+    q = question.lower().strip()
     
-    # 4. Check if question is about GNITS
-    gnits_keywords = ['gnits', 'college', 'admission', 'fee', 'placement', 'library', 'hostel', 'contact']
-    if any(keyword in q for keyword in gnits_keywords):
-        return f"{name_prefix}{gnits_info}"
-    
-    # 5. Greetings
+    # Greetings
     if re.search(r'^(hi|hello|hey|namaste)', q):
-        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you?"
+        return f"{name_prefix}Hello! 👋 Welcome to Campus Bot! How can I help you today?"
     
     if re.search(r'how are you', q):
         return f"{name_prefix}I'm doing great! 😊 Thanks for asking!"
     
-    # 6. Default
+    if re.search(r'thank|thanks', q):
+        return f"{name_prefix}You're very welcome! 😊"
+    
+    if re.search(r'tell me a joke', q):
+        return f"{name_prefix}Why did the student eat their homework? Because the teacher said it was a piece of cake! 😄"
+    
+    # GNITS Questions
+    if re.search(r'fee|fees|cost|tuition', q):
+        return f"{name_prefix}💰 **Fee Structure:**\n\nB.Tech: ₹1,62,000 per year\nM.Tech: ₹1,12,000 per year"
+    
+    if re.search(r'admission|apply|eligibility', q):
+        return f"{name_prefix}📝 **Admissions:**\n\nUG: TG-EAPCET exam required\nPG: Based on GATE score\nContact: 040-29565856"
+    
+    if re.search(r'placement|package|lpa', q):
+        return f"{name_prefix}🏆 **Placements:**\n\nHighest Package: 50 LPA (Microsoft)\nTop Recruiters: Microsoft, ServiceNow, Deloitte"
+    
+    if re.search(r'library|hostel|canteen|sports|facility', q):
+        return f"{name_prefix}📚 **Facilities:**\n\nLibrary: 8 AM - 8 PM\nHostel: Girls hostel with security\nSports and Canteen available"
+    
+    if re.search(r'contact|phone|number', q):
+        return f"{name_prefix}📞 **Contacts:**\n\nAdmissions: 040-29565856\nPrincipal: 040-29565850\nPlacements: 040-29565860"
+    
+    # PDF Questions
     if st.session_state.pdf_text:
-        return f"""{name_prefix}📄 **Document loaded: {st.session_state.uploaded_file_name}**
+        # Simple PDF search
+        pdf_lower = st.session_state.pdf_text.lower()
+        words = q.split()
+        for word in words:
+            if len(word) > 3 and word in pdf_lower:
+                # Find relevant line
+                lines = st.session_state.pdf_text.split('\n')
+                for line in lines:
+                    if word in line.lower() and len(line) > 30:
+                        return f"📄 **From your PDF ({st.session_state.uploaded_file_name}):**\n\n{line[:500]}"
+    
+    # Default
+    if st.session_state.pdf_text:
+        return f"""{name_prefix}📄 **I see you uploaded a PDF!**
 
-Ask me anything about this document! Examples:
-- "Summarize this document"
-- "What are the main points?"
+Ask me questions like:
+- "What is this document about?"
+- "Summarize the key points"
 - "Tell me about [specific topic]"
 
 Or ask about GNITS college! 🎓"""
     else:
-        return f"""{name_prefix}😊 **Welcome!**
+        return f"""{name_prefix}😊 **Welcome to Campus Bot!**
 
-📄 **Upload a PDF** to ask questions about its content
-🏫 **Ask about GNITS college** (admissions, fees, placements)
+You can:
+📄 **Upload a PDF** - Ask questions about its content
+🏫 **Ask about GNITS** - Admissions, fees, placements, facilities
+💬 **Chat casually** - "How are you?", "Tell me a joke"
 
 What would you like to know? 🎓"""
 
@@ -240,7 +291,7 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎓 Campus Chatbot</h1>
-    <p>Upload ANY PDF + Ask Questions + GNITS Info</p>
+    <p>Upload PDFs | Ask Questions | Get Answers</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -248,23 +299,22 @@ st.markdown("""
 # Sidebar
 # ============================================
 with st.sidebar:
-    st.markdown("### 📄 Upload Document")
+    st.markdown("### 📄 Upload PDF")
     
     uploaded_file = st.file_uploader("Choose PDF file", type=['pdf'])
     
     if uploaded_file:
         st.success(f"✅ {uploaded_file.name} selected")
-        if st.button("🚀 Process Document", use_container_width=True):
+        if st.button("🚀 Process PDF", use_container_width=True):
             with st.spinner("Processing PDF..."):
                 st.session_state.pdf_text = extract_pdf_text(uploaded_file)
                 st.session_state.uploaded_file = uploaded_file
                 st.session_state.uploaded_file_name = uploaded_file.name
-                st.success("✅ Document processed!")
+                st.success("✅ Ready!")
                 st.rerun()
     
-    # FIXED: Check if uploaded_file exists before accessing .name
     if st.session_state.uploaded_file:
-        st.info(f"📊 Active: {st.session_state.uploaded_file_name}")
+        st.info(f"📄 Active: {st.session_state.uploaded_file_name}")
     
     st.markdown("---")
     st.markdown("### 👤 Profile")
@@ -279,10 +329,9 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🤖 AI Status")
     if gemini_model:
-        st.success(f"✅ Gemini Active ({gemini_model_name})")
+        st.success(f"✅ Gemini Active")
     else:
         st.warning("⚠️ Gemini not available")
-        st.info("Add GOOGLE_API_KEY to Secrets")
     
     st.markdown("---")
     if st.button("🗑️ Clear Chat", use_container_width=True):
@@ -300,20 +349,20 @@ for msg in st.session_state.messages:
     else:
         st.markdown(f'<div class="bot-message"><strong>🎓 Campus Bot</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
 
-question = st.chat_input("Ask about your document or GNITS college...")
+question = st.chat_input("Ask about your PDF, GNITS college, or just chat...")
 
 if question:
     st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
     with st.chat_message("assistant"):
-        with st.spinner("🤔 Searching..."):
+        with st.spinner("🤔 Thinking..."):
             response = get_response(question)
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})
 
 if not st.session_state.messages:
     if st.session_state.pdf_text:
-        st.info(f"📄 **Document loaded: {st.session_state.uploaded_file_name}**\n\nAsk me anything about this document!")
+        st.info(f"📄 **Ready!** Ask me anything about {st.session_state.uploaded_file_name}")
     else:
-        st.info("👋 **Hello!** Upload any PDF and ask questions about it! Or ask about GNITS college!")
+        st.info("👋 **Hello!** Upload a PDF, ask about GNITS college, or just chat with me!")
